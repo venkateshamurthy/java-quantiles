@@ -2,7 +2,7 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>java-quantiles</groupId>
+	<groupId>org.apache.commons.math3.java.quantiles</groupId>
 	<artifactId>java-quantiles</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
@@ -17,6 +17,18 @@
 			//System.out.println(psquared.toString()); //uncomment here to see
 			// the papers example output
 		double median=psquared.getResult();</description>
+		 <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <scm>
+    <url>https://github.com/venkateshamurthy/java-quantiles</url>
+  </scm>
+		
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<pmd.version>2.7.1</pmd.version>
@@ -36,13 +48,13 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-		<groupId>org.apache.commons</groupId>
+			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-math3</artifactId>
 			<version>3.3-SNAPSHOT</version>
 			<scope>compile</scope>
 		</dependency>
 		<dependency>
-		<groupId>org.apache.commons</groupId>
+			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-math3</artifactId>
 			<version>3.3-SNAPSHOT</version>
 			<classifier>tests</classifier>
@@ -106,6 +118,10 @@
 			</plugin>
 		</plugins>
 	</build>
+	<!-- As per maven standards explained https://maven.apache.org/guides/mini/guide-central-repository-upload.html 
+		we should ot add repos here. However since these are apache snapshots that 
+		i require i am forced to use them here. Once they are available in central 
+		i shall remove this.. -->
 	<repositories>
 		<repository>
 			<id>apache.snapshots</id>
