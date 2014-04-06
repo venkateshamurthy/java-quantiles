@@ -1,0 +1,116 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>java-quantiles</groupId>
+	<artifactId>java-quantiles</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>java-quantiles</name>
+	<url>http://maven.apache.org</url>
+	<description>This is a simple Apache Commons Math style implementation of P Square Algorithm.
+		Way to use: Just use like a StorelessUnivariateStatistic (of commons-math3-3.3)
+		PSquaredPercentile psquared = new PSquaredPercentile(50);
+		Double p2value = 0d;
+		while(array elements exist) 
+			psquared.increment(data[i]);
+			//System.out.println(psquared.toString()); //uncomment here to see
+			// the papers example output
+		double median=psquared.getResult();</description>
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<pmd.version>2.7.1</pmd.version>
+		<findbugs.version>2.5.1</findbugs.version>
+		<checkstyle.version>2.9.1</checkstyle.version>
+		<clirr.version>2.6.1</clirr.version>
+		<!-- Temporary downdate: 0.6.3 uses different tags and CP32 was not updated -->
+		<jacoco.version>0.6.2.201302030002</jacoco.version>
+
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.11</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+		<groupId>org.apache.commons</groupId>
+			<artifactId>commons-math3</artifactId>
+			<version>3.3-SNAPSHOT</version>
+			<scope>compile</scope>
+		</dependency>
+		<dependency>
+		<groupId>org.apache.commons</groupId>
+			<artifactId>commons-math3</artifactId>
+			<version>3.3-SNAPSHOT</version>
+			<classifier>tests</classifier>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<includes>
+						<include>**/*Test.java</include>
+						<include>**/*TestBinary.java</include>
+						<include>**/*TestPermutations.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<version>2.13</version>
+				<configuration>
+					<argLine>-Djava.library.path=${lib64Path}
+						-Dlog4j.configurationFile=${log4jPath}</argLine>
+					<includes>
+						<include>**/*IT*</include>
+					</includes>
+					<executions>
+						<execution>
+							<goals>
+								<goal>integration-test</goal>
+								<goal>verify</goal>
+							</goals>
+						</execution>
+					</executions>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>clirr-maven-plugin</artifactId>
+				<version>${clirr.version}</version>
+				<configuration>
+					<minSeverity>${minSeverity}</minSeverity>
+					<ignoredDifferencesFile>${basedir}/clirr-ignored.xml</ignoredDifferencesFile>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-pmd-plugin</artifactId>
+				<version>${pmd.version}</version>
+				<configuration>
+					<targetJdk>${maven.compiler.target}</targetJdk>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+	<repositories>
+		<repository>
+			<id>apache.snapshots</id>
+			<name>Repository for apache  builds</name>
+			<url>https://repository.apache.org/snapshots</url>
+		</repository>
+	</repositories>
+</project>
