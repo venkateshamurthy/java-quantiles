@@ -5,7 +5,7 @@
 	<groupId>java-quantiles</groupId>
 	<artifactId>java-quantiles</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<packaging>pom</packaging>
+	<packaging>jar</packaging>
 	<name>java-quantiles</name>
 	<url>http://maven.apache.org</url>
 	<description>This is a simple Apache Commons Math style implementation of P Square Algorithm.

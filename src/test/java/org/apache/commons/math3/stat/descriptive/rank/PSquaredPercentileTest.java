@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.commons.math3.stat.descriptive.rank;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,8 +26,12 @@ import java.util.Random;
 
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction;
+import org.apache.commons.math3.distribution.ExponentialDistribution;
+import org.apache.commons.math3.distribution.GammaDistribution;
+import org.apache.commons.math3.distribution.GammaDistributionTest;
 import org.apache.commons.math3.distribution.LogNormalDistribution;
 import org.apache.commons.math3.distribution.NormalDistribution;
+import org.apache.commons.math3.distribution.PoissonDistribution;
 import org.apache.commons.math3.distribution.RealDistribution;
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.NotANumberException;
@@ -328,7 +332,7 @@ public class PSquaredPercentileTest extends
 	}
 
 	@Test(expected = MathIllegalArgumentException.class) public void testInitial() {
-		new Markers(new ArrayList<Double>(), 0.5);
+		Markers m = new Markers(new ArrayList<Double>(), 0.5);
 		Assert.fail();
 	}
 
@@ -492,7 +496,6 @@ public class PSquaredPercentileTest extends
 		assertValues(psquared.getResult(), referenceValue, delta);
 	}
 
-	@SuppressWarnings("unused")
 	private void doCalculatePercentile(double percentile, double[] test) {
 		doCalculatePercentile(percentile, test, Double.MAX_VALUE);
 	}
@@ -737,7 +740,6 @@ public class PSquaredPercentileTest extends
 		
 	}
 	
-	@SuppressWarnings("unused")
 	private void doDistributionTest(RealDistribution distribution,double delta) {
 		double data[];
 		data = distribution.sample(VERY_LARGE);

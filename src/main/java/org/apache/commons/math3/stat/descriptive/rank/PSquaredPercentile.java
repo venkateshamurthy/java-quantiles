@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.commons.math3.stat.descriptive.rank;
 
 import java.io.IOException;
@@ -1228,10 +1227,10 @@ public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 				MathArrays.sortInPlace(x, y);// since d can be +/- 1
 				univariateFunction = linear.interpolate(x, y);
 				lCount++;
-				System.out
-						.format("\nLinear:xD=%f,qip=%f,d=%d,x[0]=%f,x[1]=%f,x[2]=%f,y[0]=%f,y[1]=%f,y[2]=%f",
-								xD, univariateFunction.value(xD), d, xval[0],
-								xval[1], xval[2], yval[0], yval[1], yval[2]);
+				//String
+				//		.format("\nLinear:xD=%f,qip=%f,d=%d,x[0]=%f,x[1]=%f,x[2]=%f,y[0]=%f,y[1]=%f,y[2]=%f",
+				//				xD, univariateFunction.value(xD), d, xval[0],
+				//				xval[1], xval[2], yval[0], yval[1], yval[2]);
 			} else {
 				qCount++;
 			}
