@@ -1088,6 +1088,7 @@ public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 		 * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<SUP>2</SUP>
 		 * Algorithm Paper</a>
 		 */
+		@SuppressWarnings("serial")
 		public double estimate(double[] x, double[] y, double z) {
 			if (Double.isNaN(z))
 				throw new NotANumberException() {
