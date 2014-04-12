@@ -1294,7 +1294,7 @@ public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 		private final int capacity;
 
 		/**
-		 * {@inheritDoc}.This constructor constructs the list with given
+		 * This constructor constructs the list with given
 		 * capacity and as well as stores the capacity
 		 * 
 		 * @param capacity
@@ -1305,7 +1305,7 @@ public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 		}
 
 		/**
-		 * {@inheritDoc}This constructor populates collection c and sets
+		 * This constructor populates collection c and sets
 		 * {@link #capacity} as size of collection passed
 		 * 
 		 * @param c
