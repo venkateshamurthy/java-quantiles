@@ -1,7 +1,11 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-
+	<parent>
+		<groupId>org.sonatype.oss</groupId>
+		<artifactId>oss-parent</artifactId>
+		<version>7</version>
+	</parent>
 	<groupId>com.github.venkateshamurthy</groupId>
 	<artifactId>java-quantiles</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
@@ -14,21 +18,22 @@
 		Double p2value = 0d;
 		while(array elements exist) 
 			psquared.increment(data[i]);
-			//System.out.println(psquared.toString()); //uncomment here to see
-			// the papers example output
-		double median=psquared.getResult();</description>
-		 <licenses>
-    <license>
-      <name>Apache License, Version 2.0</name>
-      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-      <distribution>repo</distribution>
-    </license>
-  </licenses>
+		System.out.println(psquared.toString()); //uncomment here to see
+		double finalMedian=psquared.getResult();
+	</description>
+	<licenses>
+		<license>
+			<name>Apache License, Version 2.0</name>
+			<url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
 
-  <scm>
-    <url>https://github.com/venkateshamurthy/java-quantiles</url>
-  </scm>
-		
+	<scm>
+		<url>git@github.com:venkateshamurthy/java-quantiles.git</url>
+		<connection>scm:git:git@github.com:venkateshamurthy/java-quantiles.git</connection>
+	</scm>
+
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<pmd.version>2.7.1</pmd.version>
@@ -118,10 +123,18 @@
 			</plugin>
 		</plugins>
 	</build>
-	<!-- As per maven standards explained https://maven.apache.org/guides/mini/guide-central-repository-upload.html 
-		we should ot add repos here. However since these are apache snapshots that 
-		i require i am forced to use them here. Once they are available in central 
-		i shall remove this.. -->
+	<developers>
+		<developer>
+			<id>venkateshamurthy</id>
+			<name>Venkatesha Murthy</name>
+			<email>ts_v_murthy@yahoo.com</email>
+		</developer>
+	</developers>
+	<!-- As per maven standards explained in https://maven.apache.org/guides/mini/guide-central-repository-upload.html 
+		we should not add repos here. I tried even putting this in maven/conf/settings.xml 
+		but in vain. However since these are apache snapshots that i require i am 
+		forced to use them here. Once they are available in central i shall remove 
+		this.. -->
 	<repositories>
 		<repository>
 			<id>apache.snapshots</id>
