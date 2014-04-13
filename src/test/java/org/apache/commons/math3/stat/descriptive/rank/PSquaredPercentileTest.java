@@ -604,6 +604,9 @@ public class PSquaredPercentileTest extends
 			Assert.assertEquals(markers.m()[i + 1], markers.m()[i].next());
 			Assert.assertNotNull(markers.m()[i].toString());
 		}
+		Assert.assertEquals(markers,markers);
+		Assert.assertTrue(markers.equals(markers));
+		Assert.assertFalse(markers.equals(null));
 		PSquaredPercentile psquared = new PSquaredPercentile(p);
 		psquared.markers(markers);
 		for (Number value : data)

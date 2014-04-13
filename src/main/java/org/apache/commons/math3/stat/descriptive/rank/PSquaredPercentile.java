@@ -579,7 +579,7 @@ public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 		 *             beyond bounds [1-5]
 		 */
 		private int findCellAndUpdateMinMax(double observation) {
-			assert m.length == 5 + 1; // this works only if markers are 5
+			if( m.length != 5 + 1)throw new MathIllegalStateException(); // this works only if markers are 5
 			k = -1;
 			if (observation < m[1].q) {
 				m[1].q = observation;

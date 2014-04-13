@@ -1,2 +1,2 @@
 #!/bin/sh
-mvn clean verify javadoc:jar source:jar
+mvn clean verify javadoc:jar source:jar jacoco:report -DoutputDirectory=target
