@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -32,8 +31,10 @@ import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction;
 import org.apache.commons.math3.distribution.LogNormalDistribution;
 import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.distribution.RealDistribution;
+import org.apache.commons.math3.exception.DimensionMismatchException;
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.NotANumberException;
+import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.stat.descriptive.StorelessUnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.StorelessUnivariateStatisticAbstractTest;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatistic;
@@ -41,7 +42,6 @@ import org.apache.commons.math3.stat.descriptive.rank.PSquaredPercentile.Marker;
 import org.apache.commons.math3.stat.descriptive.rank.PSquaredPercentile.Markers;
 import org.apache.commons.math3.stat.descriptive.rank.PSquaredPercentile.PSquareEstimator;
 import org.apache.commons.math3.stat.descriptive.rank.PSquaredPercentile.PSquareInterpolatorEvaluator;
-import org.apache.commons.math3.stat.descriptive.rank.PSquaredPercentile.PiecewisePSquareInterpolatorEvaluator;
 import org.apache.commons.math3.util.FastMath;
 import org.junit.Assert;
 import org.junit.Test;
@@ -53,11 +53,9 @@ import org.junit.Test;
  * -Declipse.workspaceCodeStyleURL=http://svn.apache.org/repos
  * /asf/maven/plugins/
  * trunk/maven-eclipse-plugin/src/optional/eclipse-config/maven-styles.xml
- *
- * @version $Id$
  */
 public class PSquaredPercentileTest extends
-        StorelessUnivariateStatisticAbstractTest {
+StorelessUnivariateStatisticAbstractTest {
 
     protected double percentile5 = 8.2299d;
     protected double percentile95 = 16.72195;// 20.82d; this is approximation
@@ -78,7 +76,8 @@ public class PSquaredPercentileTest extends
     @Test
     public void testCopyConsistencyWithInitialMostElements() {
 
-        StorelessUnivariateStatistic master = (StorelessUnivariateStatistic) getUnivariateStatistic();
+        StorelessUnivariateStatistic master =
+                (StorelessUnivariateStatistic) getUnivariateStatistic();
 
         StorelessUnivariateStatistic replica = null;
 
@@ -111,7 +110,8 @@ public class PSquaredPercentileTest extends
     @Test
     public void testCopyConsistencyWithInitialFirstFewElements() {
 
-        StorelessUnivariateStatistic master = (StorelessUnivariateStatistic) getUnivariateStatistic();
+        StorelessUnivariateStatistic master =
+                (StorelessUnivariateStatistic) getUnivariateStatistic();
 
         StorelessUnivariateStatistic replica = null;
 
@@ -126,12 +126,13 @@ public class PSquaredPercentileTest extends
         // Check same
         Assert.assertTrue(replica.equals(master));
         Assert.assertTrue(master.equals(replica));
-
         // Now add second part to both and check again
         master.incrementAll(testArray, (int) index,
                 (int) (testArray.length - index));
         replica.incrementAll(testArray, (int) index,
                 (int) (testArray.length - index));
+        Assert.assertTrue(master.equals(master));
+        Assert.assertTrue(replica.equals(replica));
         Assert.assertTrue(replica.equals(master));
         Assert.assertTrue(master.equals(replica));
     }
@@ -206,7 +207,8 @@ public class PSquaredPercentileTest extends
         Assert.assertFalse(markers.equals(new String()));
         // Single Marker
         @SuppressWarnings("serial")
-        Map<String, Double> singleMarkerMapExpected = new LinkedHashMap<String, Double>() {
+        Map<String, Double> singleMarkerMapExpected =
+        new LinkedHashMap<String, Double>() {
             {
                 put("m5.index", 5.0);
                 put("m5.n", 11.0);
@@ -215,15 +217,20 @@ public class PSquaredPercentileTest extends
                 put("m5.dn", 1.0);
             }
         };
-        Assert.assertEquals(singleMarkerMapExpected, markers.m()[5].toMap());
-        for (int i = 0; i < markers.m().length; i++) {
-            Assert.assertTrue(markers.m()[i].equals(markers.m()[i]));
+        Assert.assertEquals(singleMarkerMapExpected,
+                markers.markerArray()[5].toMap());
+        for (int i = 0; i < markers.markerArray().length; i++) {
+            Assert.assertTrue(markers.markerArray()[i].equals(markers
+                    .markerArray()[i]));
         }
-        for (int i = 0; i < markers.m().length - 1; i++) {
-            Assert.assertFalse(markers.m()[i].equals(markers.m()[i + 1]));
-        } // Check for null markers test during equality testing
+        for (int i = 0; i < markers.markerArray().length - 1; i++) {
+            Assert.assertFalse(markers.markerArray()[i].equals(markers
+                    .markerArray()[i + 1]));
+        }
+        // Check for null markers test during equality testing
         // Until 5 elements markers are not initialized
-        PSquaredPercentile p1 = new PSquaredPercentile(), p2 = new PSquaredPercentile();
+        PSquaredPercentile p1 = new PSquaredPercentile(), p2 =
+                new PSquaredPercentile();
         Assert.assertEquals(p1, p2);
         p1.evaluate(new double[] { 1.0, 2.0, 3.0 });
         p2.evaluate(new double[] { 1.0, 2.0, 3.0 });
@@ -242,7 +249,7 @@ public class PSquaredPercentileTest extends
     }
 
     @Test
-    public void testEqualsAndHashCodeInMarkers() {
+    public void testEqualsInMarkers() {
         double p = 0.5;
         Marker mPrev, m, mNext;
         Markers markers = new Markers(Arrays.asList(new Double[] { 0.02, 1.18,
@@ -255,9 +262,9 @@ public class PSquaredPercentileTest extends
                 mNext = new Marker(9.15, 6.0, p, 6),
                 new Marker(21.91, 8.5, (1 + p) / 2, 8),
                 new Marker(38.62, 11, 1, 11) });
-        mPrev = markers.m()[1];
-        m = markers.m()[2];
-        mNext = markers.m()[3];
+        mPrev = markers.markerArray()[1];
+        m = markers.markerArray()[2];
+        mNext = markers.markerArray()[3];
         Assert.assertEquals(m, m);
         Assert.assertNotEquals(mPrev, m);
         Assert.assertNotEquals(mNext, m);
@@ -282,14 +289,23 @@ public class PSquaredPercentileTest extends
                 mNextCopy = new Marker(9.15, 6.0, p, 6),
                 new Marker(21.91, 8.5, (1 + p) / 2, 8),
                 new Marker(38.62, 11, 1, 11) });
-        mPrevCopy = markers1.m()[1];
-        mCopy = markers1.m()[2];
-        mNextCopy = markers1.m()[3];
-        Assert.assertEquals(markers.hashCode(), markers1.hashCode());
-        Set<Markers> set2= new HashSet<Markers>();
-        set2.add(markers);
-        Assert.assertTrue(set2.contains(markers1));
+        // Hashcode testing
+        Set<Markers> markersSet = new HashSet<Markers>();
+        markersSet.add(markers);
+        markersSet.add(markers1);
+        Assert.assertEquals(1, markersSet.size());
+        Assert.assertEquals(markers, markersSet.iterator().next());
+
+        mPrevCopy = markers1.markerArray()[1];
+        mCopy = markers1.markerArray()[2];
+        mNextCopy = markers1.markerArray()[3];
         Assert.assertEquals(m, mCopy);
+        // Hashcode testing
+        Set<Marker> markerSet = new HashSet<Marker>();
+        markerSet.add(mCopy);
+        markerSet.add(m);
+        Assert.assertEquals(1, markerSet.size());
+        Assert.assertEquals(m, markerSet.iterator().next());
         // Change previous to null still must match
         mCopy.previous(null);
         Assert.assertEquals(m, mCopy);
@@ -314,16 +330,10 @@ public class PSquaredPercentileTest extends
         m.next(null);
         mCopy.next(null);
         Assert.assertEquals(m, mCopy);// this must match as both nexts -> null
-        Set<Marker> set1=new HashSet<Marker>();
-
-        m.next(mNext).previous(mPrev); //reset it back
-        mCopy.next(mNextCopy).previous(mPrevCopy);//reset it back
-        set1.add(m);
-        Assert.assertTrue(set1.contains(mCopy));
 
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testNullEstimatorsInMarkers() {
         double p = 0.5;
         Markers markers = new Markers(Arrays.asList(new Double[] { 0.02, 1.18,
@@ -345,21 +355,37 @@ public class PSquaredPercentileTest extends
                 new Marker(38.62, 11, 1, 11) });
 
         Assert.assertTrue(markers.equals(markersNew));
-        markersNew.estimator(new PiecewisePSquareInterpolatorEvaluator());
+        markersNew.estimator(new PSquareEstimator() {
+
+            public double estimate(double[] x, double[] y, double z) {
+                return 0;
+            }
+
+            public int quadraticEstimationCount() {
+                return 0;
+            }
+
+            public int linearEstimationCount() {
+                return 0;
+            }
+        });
         Assert.assertFalse(
                 "The estimators are different and hence markers cannot be same",
                 markers.equals(markersNew));
         // If just one element of markers got changed then its still false.
-        markersNew.m()[1].dn(100);
+        markersNew.markerArray()[1].desiredMarkerIncrement(100);
         Assert.assertFalse(markers.equals(markersNew));
         // Marker equals testing
         Marker m1 = new Marker(0.02, 1, 0, 11);
         Marker m2 = new Marker(0.02, 1, 0, 11);
         Assert.assertTrue(m1.equals(m1));
-        Assert.assertFalse(m1.equals(m2.n(12)));// different values
-        Assert.assertFalse(m1.equals(m2.dn(12)));// different values
-        Assert.assertFalse(m1.equals(m2.np(12)));// different values
-        Assert.assertFalse(m1.equals(m2.q(12)));// different values
+        Assert.assertFalse(m1.equals(m2.integralMarkerPosition(12)));//different
+        // values
+        Assert.assertFalse(m1.equals(m2.desiredMarkerIncrement(12)));//different
+        // values
+        Assert.assertFalse(m1.equals(m2.desiredMarkerPosition(12)));// different
+        // values
+        Assert.assertFalse(m1.equals(m2.markerHeight(12)));// different values
         Assert.assertFalse(m1.equals(null)); // null check
         Assert.assertFalse(m1.equals(markersNew));// different class
 
@@ -367,7 +393,7 @@ public class PSquaredPercentileTest extends
 
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testNullEstimatorsInPSquaredPercentile() {
         PSquaredPercentile p = new PSquaredPercentile();
         p.estimator(null);
@@ -379,19 +405,9 @@ public class PSquaredPercentileTest extends
         double xInsufficient[] = { 2, 4 }, yInsufficient[] = { 36.368602,
                 54.957936 };
         estimator.estimate(xInsufficient, yInsufficient, Double.NaN);
-        PSquareEstimator estimatorNew = new PSquaredPercentile.PiecewisePSquareInterpolatorEvaluator();
-        estimatorNew.estimate(xInsufficient, yInsufficient, Double.NaN);
     }
 
-    @Test(expected = NotANumberException.class)
-    public void testPSquarePiecewiseEstimatorWithNanInput() {
-        PSquareEstimator estimator = new PSquaredPercentile.PiecewisePSquareInterpolatorEvaluator();
-        double xInsufficient[] = { 2, 4 }, yInsufficient[] = { 36.368602,
-                54.957936 };
-        estimator.estimate(xInsufficient, yInsufficient, Double.NaN);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = DimensionMismatchException.class)
     public void testPSquareEstimatorWithDifferentNumberofValuesInXAndY() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         double oneElementInX[] = { 2, 3, 4, 5 }, twoElementsInY[] = {
@@ -407,86 +423,80 @@ public class PSquaredPercentileTest extends
         estimator.estimate(xInsufficient, yInsufficient, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testPSquareEstimatorWithNullXAndYValues() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         estimator.estimate(null, null, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testPSquareEstimatorWithNullXValues() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         estimator.estimate(null, new double[] { 1d, 2d }, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testPSquareEstimatorWithNullYValues() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         estimator.estimate(new double[] { 1d, 2d }, null, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPSquarePiecewiseEstimatorWithInsufficientValues() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        double xInsufficient[] = { 2, 4 }, yInsufficient[] = { 36.368602,
-                54.957936 };
-        estimator.estimate(xInsufficient, yInsufficient, 3d);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPSquarePiecewiseEstimatorWithDifferentNumberofValuesInXAndY() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        double oneElementInX[] = { 2, 3, 4, 5 }, twoElementsInY[] = {
-                36.368602, 54.957936 };
-        estimator.estimate(oneElementInX, twoElementsInY, 3d);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPiecewisePSquareEstimatorWithNullXValues() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        estimator.estimate(null, new double[] { 1d, 2d }, 3d);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPiecewisePSquareEstimatorWithNullYValues() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        estimator.estimate(new double[] { 1d, 2d }, null, 3d);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPiecewisePSquareEstimatorWithNullXAndYValues() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        estimator.estimate(null, null, 3d);
-    }
-
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = DimensionMismatchException.class)
     public void testPSquareEstimatorWithDifferingLengthArraysForXAndY() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         double xInsufficient[] = { 2, 4 }, yInsufficient[] = { 36.368602, };
         estimator.estimate(xInsufficient, yInsufficient, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
+    @Test(expected = NullArgumentException.class)
     public void testPSquareEstimatorWithNullInputs() {
         PSquareEstimator estimator = new PSquareInterpolatorEvaluator();
         double x[] = null, y[] = null;
         estimator.estimate(x, y, 3d);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPiecewisePSquareEstimatorWithInsufficientValues() {
-        PSquareEstimator estimator = new PSquaredPercentile.PiecewisePSquareInterpolatorEvaluator();
-        double xInsufficient[] = { 2, 4 }, yInsufficient[] = { 36.368602,
-                54.957936 };
-        estimator.estimate(xInsufficient, yInsufficient, 3d);
+    @Test
+    public void testPSquareEstimatorCopy() {
+        PSquareInterpolatorEvaluator estimator =
+                new PSquareInterpolatorEvaluator();
+        estimator.xD(3d);
+        // double x[] = { 2, 4, 5 }, y[] = { 36.368602, 54.957936, 98.613498 };
+        // Assert.assertEquals(45.66, estimator.estimate(x, y, 3.0), 0.01);
+        TestUtils.checkSerializedEquality(estimator);
     }
 
-    @Test(expected = MathIllegalArgumentException.class)
-    public void testPiecewisePSquareEstimatorWithNullInputs() {
-        PSquareEstimator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        double x[] = null, y[] = null;
-        estimator.estimate(x, y, 3d);
+    @Test
+    public void testPSquareEstimatorHashCodeEquals() {
+        PSquareInterpolatorEvaluator estimator =
+                new PSquareInterpolatorEvaluator();
+        estimator.xD(3d);
         Assert.assertTrue(estimator.equals(estimator));
+        Assert.assertFalse(estimator.equals(null));
+        Assert.assertFalse(estimator.equals(new String()));
+
+        PSquareInterpolatorEvaluator estimator1 =
+                new PSquareInterpolatorEvaluator();
+        estimator1.xD(3d);
+        Set<PSquareInterpolatorEvaluator> set =
+                new HashSet<PSquareInterpolatorEvaluator>();
+        set.add(estimator);
+        set.add(estimator1);
+        Assert.assertEquals(1, set.size());
+        Assert.assertEquals(estimator, set.iterator().next());
+        double x[] = { 2, 4, 5 }, y[] = { 36.368602, 54.957936, 98.613498 };
+        Assert.assertEquals(45.66, estimator.estimate(x, y, 3.0), 0.01);
+        Assert.assertFalse(estimator.equals(estimator1));
+        Assert.assertTrue(estimator1.equals(estimator1));
+        // Linear:xD=4.000000,qip=62842.5590,d=1,x[0]=1.000000,x[1]=3.000000,
+        //x[2]=5.000000,y[0]=1113.084515,y[1]=60260.572819,y[2]=65424.545283
+        PSquareInterpolatorEvaluator estimator2 =
+                new PSquareInterpolatorEvaluator();
+        estimator2.xD(4d);
+        double x2[] = { 1, 3, 5 }, y2[] = { 1113.084515, 60260.572819,
+                65424.545283 };
+        Assert.assertEquals(62842.5590, estimator.estimate(x2, y2, 4.0), 0.01);
+        Assert.assertFalse(estimator.equals(estimator2));
+        Assert.assertTrue(estimator2.equals(estimator2));
     }
 
     @Test
@@ -504,53 +514,29 @@ public class PSquaredPercentileTest extends
         ptile.evaluate(d);
         Assert.assertEquals(ptile, ptile);
         Assert.assertEquals(1d, ptile.getResult(), 1e-02);// this calls min
-        PSquareInterpolatorEvaluator original=new PSquareInterpolatorEvaluator();
-        TestUtils.checkSerializedEquality(original);
-        Assert.assertEquals(original, original);
-        Assert.assertFalse(original.equals(null));
-        Assert.assertFalse(original.equals(""));
-        //PSquareInterpolatorEvaluator another=new PSquareInterpolatorEvaluator();
-        //another.
     }
-    @Test
-    public void testPiecewisePSquared() {
-        PiecewisePSquareInterpolatorEvaluator original=new PiecewisePSquareInterpolatorEvaluator();
-        TestUtils.checkSerializedEquality(original);
-        Assert.assertEquals(original, original);
-        Assert.assertFalse(original.equals(null));
-        Assert.assertFalse(original.equals(""));
-        //PSquareInterpolatorEvaluator another=new PSquareInterpolatorEvaluator();
-        //another.
-    }
+
     @Test
     public void testPSquareEstimatorLinear() {
-        // Linear:xD=3.000000,qip=34.209638,d=-1,x[0]=2.000000,x[1]=4.000000,x[2]=5.000000,y[0]=36.368602,y[1]=54.957936,y[2]=98.613498
-        // Linear:xD=4.000000,qip=69590.498531,d=1,x[0]=1.000000,x[1]=3.000000,x[2]=5.000000,y[0]=1113.084515,y[1]=60260.572819,y[2]=65424.545283
-        PSquareInterpolatorEvaluator estimator = new PSquareInterpolatorEvaluator();
-        Set<PSquareInterpolatorEvaluator> set=new HashSet<PSquareInterpolatorEvaluator>();
-        set.add(estimator);
-        Assert.assertTrue(set.contains(estimator));
+        // Linear:xD=3.000000,qip=34.209638,d=-1,x[0]=2.000000,x[1]=4.000000,
+        //x[2]=5.000000,y[0]=36.368602,y[1]=54.957936,y[2]=98.613498
+        // Linear:xD=4.000000,qip=69590.498531,d=1,x[0]=1.000000,x[1]=3.000000,
+        //x[2]=5.000000,y[0]=1113.084515,y[1]=60260.572819,y[2]=65424.545283
+        PSquareInterpolatorEvaluator estimator =
+                new PSquareInterpolatorEvaluator();
         estimator.xD(3d);
         double x[] = { 2, 4, 5 }, y[] = { 36.368602, 54.957936, 98.613498 };
         Assert.assertEquals(45.66, estimator.estimate(x, y, 3.0), 0.01);
         Assert.assertEquals(1, estimator.linearEstimationCount());
         Assert.assertEquals(0, estimator.quadraticEstimationCount());
-        Assert.assertTrue(estimator.equals(estimator));
+
         UnivariateFunction function = estimator.interpolate(x, y);
         Assert.assertEquals(1 + 1, estimator.linearEstimationCount());
         Assert.assertEquals(0, estimator.quadraticEstimationCount());
-        Assert.assertTrue(estimator.equals(estimator));
+
         Assert.assertTrue("function=" + function.getClass(),
                 function instanceof PolynomialSplineFunction);
         Assert.assertEquals(45.66, function.value(3.0), 0.01);
-        PiecewisePSquareInterpolatorEvaluator estimatorNew = new PiecewisePSquareInterpolatorEvaluator();
-        Set<PiecewisePSquareInterpolatorEvaluator> set2=new HashSet<PiecewisePSquareInterpolatorEvaluator>();
-        set2.add(estimatorNew);
-        Assert.assertTrue(set2.contains(estimatorNew));
-        Assert.assertEquals(45.66, estimatorNew.estimate(x, y, 3.0), 0.01);
-        Assert.assertEquals(45.66, function.value(3.0), 0.01);
-        Assert.assertEquals(1, estimatorNew.linearEstimationCount());
-        Assert.assertEquals(0, estimatorNew.quadraticEstimationCount());
         estimator = new PSquareInterpolatorEvaluator();
         estimator.xD(3d);
         double x1[] = { 1, 3, 5 }, y1[] = { 1113.084515, 60260.572819,
@@ -561,61 +547,22 @@ public class PSquaredPercentileTest extends
                 + newExpected, newExpected, newEst, 0.01);
     }
 
-    @Test
-    public void testPSquarePiecewiseEstimatorLinear() {
-        // Linear:xD=3.000000,qip=34.209638,d=-1,x[0]=2.000000,x[1]=4.000000,x[2]=5.000000,y[0]=36.368602,y[1]=54.957936,y[2]=98.613498
-        // Linear:xD=4.000000,qip=69590.498531,d=1,x[0]=1.000000,x[1]=3.000000,x[2]=5.000000,y[0]=1113.084515,y[1]=60260.572819,y[2]=65424.545283
-        PiecewisePSquareInterpolatorEvaluator estimator = new PiecewisePSquareInterpolatorEvaluator();
-        double x[] = { 2, 4, 5 }, y[] = { 36.368602, 54.957936, 98.613498 };
-        Assert.assertEquals(45.66, estimator.estimate(x, y, 3.0), 0.01);
-        Assert.assertEquals(1, estimator.linearEstimationCount());
-        Assert.assertEquals(0, estimator.quadraticEstimationCount());
-
-        Assert.assertEquals(45.66, estimator.estimate(x, y, 3.0), 0.01);
-        Assert.assertEquals(1 + 1, estimator.linearEstimationCount());
-        Assert.assertEquals(0, estimator.quadraticEstimationCount());
-        estimator = new PiecewisePSquareInterpolatorEvaluator();
-        double x1[] = { 1, 3, 5 }, y1[] = { 1113.084515, 60260.572819,
-                65424.545283 };
-        double newEst = estimator.estimate(x1, y1, 3.1), newExpected = 62842.559;
-
-        Assert.assertEquals("The new est=" + newEst + " Expected is:"
-                + newExpected, newExpected, newEst, 0.01);
-    }
-
-    @Test
-    public void testFixedCapacityList() {
-        PSquaredPercentile.FixedCapacityList<Double> l = new PSquaredPercentile.FixedCapacityList<Double>(
-                5);
-        Assert.assertEquals(5, l.capacity());
-
-        Assert.assertEquals(0, l.size());
-        for (int i = 0; i < l.capacity(); i++) {
-            Assert.assertTrue(l.add(i * 1.0));
-        }
-        Assert.assertFalse(l.add(10 * 1.0));
-        Assert.assertFalse(l.addAll(null)); // null test
-        for (int i = 0; i < l.capacity(); i++) {
-            Assert.assertEquals(i * 1.0, l.get(i), 0.0);
-        }
-        List<Double> l2 = new ArrayList<Double>();
-        for (int i = 10; i < 20; i++) {
-            Assert.assertTrue(l2.add(i * 1.0));
-        }
-        PSquaredPercentile.FixedCapacityList<Double> l3 = new PSquaredPercentile.FixedCapacityList<Double>(
-                l2);
-        for (int i = 0; i < l3.capacity(); i++) {
-            Assert.assertEquals(i + 10, l3.get(i), 0.0);
-        }
-        l3.clear();
-        Assert.assertTrue(l3.addAll(l2));
-        l.clear();
-        for (int i = 0; i < l.capacity() - 2; i++) {
-            Assert.assertTrue(l.add(i * 1.0));
-        }
-        Assert.assertFalse(l.addAll(Arrays.asList(3d, 4d, 5d, 6d)));
-    }
-
+    /**
+     * @Test public void testFixedCapacityList() {
+     *       PSquaredPercentile.FixedCapacityList<Double> l = new
+     *       PSquaredPercentile.FixedCapacityList<Double>( 5);
+     *       Assert.assertEquals(5, l.capacity());
+     *
+     *       Assert.assertEquals(0, l.size()); for (int i = 0; i < l.capacity();
+     *       i++) Assert.assertTrue(l.add(i * 1.0)); Assert.assertFalse(l.add(10
+     *       * 1.0)); Assert.assertFalse(l.addAll(null)); // null test for (int
+     *       i = 0; i < l.capacity(); i++) Assert.assertEquals(i * 1.0,
+     *       l.get(i), 0.0); List<Double> l2 = new ArrayList<Double>(); for (int
+     *       i = 10; i < 20; i++) Assert.assertTrue(l2.add(i * 1.0)); l.clear();
+     *       for (int i = 0; i < l.capacity() - 2; i++)
+     *       Assert.assertTrue(l.add(i * 1.0));
+     *       Assert.assertFalse(l.addAll(Arrays.asList(3d, 4d, 5d, 6d))); }
+     */
     @Override
     public UnivariateStatistic getUnivariateStatistic() {
         PSquaredPercentile ptile = new PSquaredPercentile(95);
@@ -825,12 +772,14 @@ public class PSquaredPercentileTest extends
         for (Number value : test) {
             psquared.increment(value.doubleValue());
         }
+
         Percentile p2 = new Percentile(percentile * 100);
 
         double[] dall = new double[test.length];
         for (int i = 0; i < test.length; i++) {
             dall[i] = test[i].doubleValue();
         }
+
         Double referenceValue = p2.evaluate(dall);
         assertValues(psquared.getResult(), referenceValue, delta);
     }
@@ -841,6 +790,7 @@ public class PSquaredPercentileTest extends
         for (double value : test) {
             psquared.increment(value);
         }
+
         Percentile p2 = new Percentile(percentile < 1 ? percentile * 100
                 : percentile);
         /*
@@ -852,7 +802,7 @@ public class PSquaredPercentileTest extends
     }
 
     @Test
-    public void testACannedData() {
+    public void testCannedDataSet() {
         // test.unoverride("dump");
         Integer[] seedInput = new Integer[] { 283, 285, 298, 304, 310, 31, 319,
                 32, 33, 339, 342, 348, 350, 354, 354, 357, 36, 36, 369, 37, 37,
@@ -862,7 +812,8 @@ public class PSquaredPercentileTest extends
         Integer[] input = new Integer[seedInput.length * 100];
         for (int i = 0; i < input.length; i++) {
             input[i] = seedInput[i % seedInput.length] + i;
-        } // Arrays.sort(input);
+        }
+        // Arrays.sort(input);
         doCalculatePercentile(0.50d, input);
         doCalculatePercentile(0.95d, input);
 
@@ -925,7 +876,7 @@ public class PSquaredPercentileTest extends
     }
 
     @Test
-    public void testPSQuaredEvalFuncWithPapersExampleDataFromAGivenPoint()
+    public void testPSQuaredEvalFuncWithPapersExampleDataFromAGivenPoint1()
             throws IOException {
         Double[] data = { 10.28, 1.47, 0.4, 0.05, 11.39, 0.27, 0.42, 0.09,
                 11.37 };
@@ -944,9 +895,11 @@ public class PSquaredPercentileTest extends
                 9.15, 21.91, 38.62 }), p);
         markers.initialize(marks);
         for (int i = 0; i < marks.length - 1; i++) {
-            Assert.assertEquals(markers.m()[i], markers.m()[i + 1].previous());
-            Assert.assertEquals(markers.m()[i + 1], markers.m()[i].next());
-            Assert.assertNotNull(markers.m()[i].toString());
+            Assert.assertEquals(markers.markerArray()[i],
+                    markers.markerArray()[i + 1].previous());
+            Assert.assertEquals(markers.markerArray()[i + 1],
+                    markers.markerArray()[i].next());
+            Assert.assertNotNull(markers.markerArray()[i].toString());
         }
         PSquaredPercentile psquared = new PSquaredPercentile(p);
         psquared.markers(markers);
@@ -968,7 +921,7 @@ public class PSquaredPercentileTest extends
     }
 
     @Test
-    public void testPSQuaredEvalFuncWithPapersExampleDataFromAGivenPointAndTraditionalEstimator()
+    public void testPSQuaredEvalFuncWithPapersExampleDataFromAGivenPoint()
             throws IOException {
         Double[] data = { 10.28, 1.47, 0.4, 0.05, 11.39, 0.27, 0.42, 0.09,
                 11.37 };
@@ -987,7 +940,7 @@ public class PSquaredPercentileTest extends
                 9.15, 21.91, 38.62 }), p);
         markers.initialize(marks);
         PSquaredPercentile psquared = new PSquaredPercentile(p)
-                .estimator(new PSquaredPercentile.PiecewisePSquareInterpolatorEvaluator());
+        .estimator(new PSquaredPercentile.PSquareInterpolatorEvaluator());
         psquared.markers(markers);
         for (Number value : data) {
             psquared.increment(value.doubleValue());
@@ -1098,4 +1051,3 @@ public class PSquaredPercentileTest extends
         // doDistributionTest(new GammaDistribution(5d,1d),0.1);
     }
 }
-
