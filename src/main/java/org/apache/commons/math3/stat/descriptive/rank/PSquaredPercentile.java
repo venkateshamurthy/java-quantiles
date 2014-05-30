@@ -61,7 +61,7 @@ implements StorelessUnivariateStatistic, Serializable {
     /**
      * The maximum array size used for psquare algorithm
      */
-    static final int PSQUARE_CONSTANT = 5;
+    private static final int PSQUARE_CONSTANT = 5;
 
     /**
      * A Default quantile needed in case if user prefers to use default no
@@ -101,7 +101,7 @@ implements StorelessUnivariateStatistic, Serializable {
     private transient double lastObservation;
 
     /**
-     * {@link Markers} is the marker collection object which comes to effect
+     * Markers is the marker collection object which comes to effect
      * only after 5 values are inserted
      */
     private PSquareMarkers markers = null;
@@ -266,8 +266,8 @@ implements StorelessUnivariateStatistic, Serializable {
     }
 
     /**
-     * {@inheritDoc}. This basically clears all the {@link #markers}, the
-     * {@link #initialFive} list and sets {@link #countOfObservations} to 0
+     * {@inheritDoc}. This basically clears all the markers, the
+     * initialFive list and sets countOfObservations to 0
      *
      * @see org.apache.commons.math3.stat.descriptive.AbstractStorelessUnivariateStatistic#clear()
      */
@@ -336,14 +336,14 @@ implements StorelessUnivariateStatistic, Serializable {
         private static final long serialVersionUID = 1L;
 
         /**
-         * Array of 5+1 {@link Marker}s (The first marker is dummy just so we
+         * Array of 5+1 Markers (The first marker is dummy just so we
          * can match the rest of indexes [1-5] indicated in the original works
          * which follows unit based index)
          */
         private final Marker[] markerArray;
 
         /**
-         * Kth cell belonging to [1-5] of the {@link #markerArray}. No need for
+         * Kth cell belonging to [1-5] of the markerArray. No need for
          * this to be serialized
          */
         private transient int k = -1;
@@ -932,7 +932,7 @@ implements StorelessUnivariateStatistic, Serializable {
 
         /**
          * {@inheritDoc} In addition it checks if the {@link #size()} returns a
-         * size that is within {@link #capacity} and if true it adds.
+         * size that is within capacity and if true it adds.
          *
          * @return true if addition is successful and false otherwise
          */
@@ -944,7 +944,7 @@ implements StorelessUnivariateStatistic, Serializable {
         /**
          * {@inheritDoc} In addition it checks if the sum of Collection size and
          * this instance's {@link #size()} returns a value that is within
-         * {@link #capacity} and if true it adds the collection.
+         * capacity and if true it adds the collection.
          *
          * @return true if addition is successful and false otherwise
          */
