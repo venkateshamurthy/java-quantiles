@@ -24,26 +24,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.interpolation.LinearInterpolator;
 import org.apache.commons.math3.analysis.interpolation.NevilleInterpolator;
 import org.apache.commons.math3.analysis.interpolation.UnivariateInterpolator;
-import org.apache.commons.math3.exception.DimensionMismatchException;
 import org.apache.commons.math3.exception.InsufficientDataException;
-import org.apache.commons.math3.exception.NotANumberException;
-import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
 import org.apache.commons.math3.exception.util.LocalizedFormats;
 import org.apache.commons.math3.stat.descriptive.AbstractStorelessUnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.StorelessUnivariateStatistic;
 import org.apache.commons.math3.util.MathArrays;
+import org.apache.commons.math3.util.MathUtils;
 import org.apache.commons.math3.util.Precision;
 
-//mvn site
 /**
  * A percentile calculation technique implementing Apache
  * {@link StorelessUnivariateStatistic} which implements the <a
@@ -62,6 +57,7 @@ import org.apache.commons.math3.util.Precision;
  */
 public class PSquaredPercentile extends AbstractStorelessUnivariateStatistic
 implements StorelessUnivariateStatistic, Serializable {
+
     /**
      * The maximum array size used for psquare algorithm
      */
@@ -72,14 +68,11 @@ implements StorelessUnivariateStatistic, Serializable {
      * argument constructor.
      */
     private static final double DEFAULT_QUANTILE_DESIRED = 95d;
+
     /**
      * Serial ID
      */
     private static final long serialVersionUID = 2283912083175715479L;
-    /**
-     * An integer formatter for print convenience
-     */
-    private static final DecimalFormat INT_FORMAT = new DecimalFormat("00");
 
     /**
      * A decimal formatter for print convenience
@@ -91,7 +84,7 @@ implements StorelessUnivariateStatistic, Serializable {
      * Initial list of 5 numbers corresponding to 5 markers. <b>NOTE:</b>watch
      * out for the add methods that are overloaded
      */
-    private List<Double> initialFive = new FixedCapacityList<Double>(
+    private final List<Double> initialFive = new FixedCapacityList<Double>(
             PSQUARE_CONSTANT);
 
     /**
@@ -108,16 +101,10 @@ implements StorelessUnivariateStatistic, Serializable {
     private transient double lastObservation;
 
     /**
-     * The {@link PSquareEstimator} of quantile. No need to serialize
-     */
-    private transient PSquareEstimator estimator =
-            new PSquareInterpolatorEvaluator();
-
-    /**
      * {@link Markers} is the marker collection object which comes to effect
      * only after 5 values are inserted
      */
-    private Markers markers = null;
+    private PSquareMarkers markers = null;
 
     /**
      * Computed p value (i,e percentile value of data set hither to received)
@@ -142,7 +129,7 @@ implements StorelessUnivariateStatistic, Serializable {
             throw new OutOfRangeException(LocalizedFormats.OUT_OF_RANGE,
                     percentile, 0, 100);
         }
-        this.quantile = percentile / 100d;// ALLWAYS GET IT WTIHIN [0,1]
+        this.quantile = percentile / 100d;// always set it within [0,1]
     }
 
     /**
@@ -161,64 +148,41 @@ implements StorelessUnivariateStatistic, Serializable {
         double result = getResult();
         result = Double.isNaN(result) ? 37 : result;
         result = result + quantile;
+        if (markers != null) {
+            result += markers.hashCode();
+        }
         return (int) (result * 31 + getN() * 13);
     }
 
     /**
      * {@inheritDoc};However in addition in this class a check on the equality
-     * of {@link Markers} is also made along with counts.
+     * of Markers is also made along with counts.
      */
     @Override
     public boolean equals(Object o) {
+        boolean result = false;
         if (this == o) {
-            return true;
-        }
-        if (o != null && o instanceof PSquaredPercentile) {
+            result = true;
+        } else if (o != null && o instanceof PSquaredPercentile) {
             PSquaredPercentile that = (PSquaredPercentile) o;
             boolean isNotNull = markers != null && that.markers != null;
-            boolean isNull = markers == null  && that.markers == null;
-            boolean result = isNotNull ? markers.equals(that.markers) : isNull;
+            boolean isNull = markers == null && that.markers == null;
+            result = isNotNull ? markers.equals(that.markers) : isNull;
             // markers as in the case of first
             // five observations
-            return result && getN() == that.getN();
-        } else {
-            return false;
+            result = result && getN() == that.getN();
         }
-    }
-
-    /**
-     * This method is used to set up some post construction initializations.
-     *
-     * @param aInputStream input stream to read from
-     * @throws ClassNotFoundException thrown when class for deserializing is
-     *             absent
-     * @throws IOException thrown when an IO Error occurs during deserialization
-     */
-    private void readObject(ObjectInputStream aInputStream)
-            throws ClassNotFoundException, IOException {
-        aInputStream.defaultReadObject();
-        estimator = new PSquareInterpolatorEvaluator(); // as this is transient
-    }
-
-    /**
-     * Getter method for {@link markers}
-     *
-     * @return {@link #markers}
-     */
-    Markers markers() {
-        return markers;
+        return result;
     }
 
     /**
      * {@inheritDoc}The internal state updated due to the new value in this
-     * context is basically of the <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup></a>
-     * algorithm marker positions and computation of the approximate quantile.
-     * This method increments/accept a value / observation into the data set and
-     * computes percentile. The result can be queried using {@link #getResult()}
+     * context is basically of the marker positions and computation of the
+     * approximate quantile. This method increments/accept a value / observation
+     * into the data set and computes percentile. The result can be queried
+     * using {@link #getResult()}
      *
      * @param observation the observation currently being added.
-     *
      */
     @Override
     public void increment(final double observation) {
@@ -232,12 +196,13 @@ implements StorelessUnivariateStatistic, Serializable {
         if (markers == null) {
             if (initialFive.add(observation)) {
                 Collections.sort(initialFive);
-                pValue = initialFive
+                pValue =
+                        initialFive
                         .get((int) (quantile * (initialFive.size() - 1)));
                 return;
             }
             // 1. Initialize once after 5th observation
-            markers = new Markers(initialFive, quantile).estimator(estimator);
+            markers = newMarkers(initialFive, quantile);
         }
         // 2. process a Data Point and return pValue
         pValue = markers.processDataPoint(observation);
@@ -245,20 +210,18 @@ implements StorelessUnivariateStatistic, Serializable {
 
     /**
      * {@inheritDoc}. This populates a string containing the values of the
-     * attributes all {@link Marker}s. Also adds a bit of formatting with
-     * separators for convenience view.
+     * attributes all Markers. Also adds a bit of formatting with separators for
+     * convenience view.
      */
     @Override
     public String toString() {
 
         if (markers == null) {
-            return String
-                    .format("|%s |%s|%s|---------------|--------------------" +
-                            "----------|-----------------------------|",
-                            DECIMAL_FORMAT.format(lastObservation), "-",
-                            DECIMAL_FORMAT.format(pValue));
+            return String.format("obs=%s pValue=%s",
+                    DECIMAL_FORMAT.format(lastObservation),
+                    DECIMAL_FORMAT.format(pValue));
         } else {
-            return String.format("|%s %s",
+            return String.format("obs=%s markers=%s",
                     DECIMAL_FORMAT.format(lastObservation), markers.toString());
         }
     }
@@ -281,50 +244,16 @@ implements StorelessUnivariateStatistic, Serializable {
     @Override
     public StorelessUnivariateStatistic copy() {
         // multiply quantile by 100 now as anyway constructor divides it by 100
-        double percentile = 100d * quantile;
-        PSquaredPercentile copy = new PSquaredPercentile(percentile)
-        .estimator(estimator);
+        PSquaredPercentile copy = new PSquaredPercentile(100d * quantile);
 
         if (markers != null) {
-            Markers marks = new Markers(initialFive, this.quantile())
-            .initialize(markers.markerArray.clone()).estimator(
-                    estimator);
-            marks.postConstruct();
-            copy = copy.markers(marks);
+            copy.markers = (PSquareMarkers) markers.clone();
         }
         copy.countOfObservations = countOfObservations;
         copy.pValue = pValue;
-        // TODO: I may need to replace this with a wrapper using
-        // AbstractSerializableListDecorator (I cannot use FixedList here)
-        copy.initialFive = new FixedCapacityList<Double>(PSQUARE_CONSTANT);
+        copy.initialFive.clear();
         copy.initialFive.addAll(initialFive);
         return copy;
-    }
-
-    /**
-     * Sets the estimator
-     *
-     * @param theEstimator the {@link PSquareEstimator} to be set
-     * @return this instance
-     * @throws NullArgumentException
-     */
-    PSquaredPercentile estimator(PSquareEstimator theEstimator) {
-        if (theEstimator == null) {
-            throw new NullArgumentException(LocalizedFormats.NULL_NOT_ALLOWED);
-        }
-        this.estimator = theEstimator;
-        return this;
-    }
-
-    /**
-     * Sets the {@link Markers}
-     *
-     * @param theMarkers passed for setting it within
-     * @return this
-     */
-    PSquaredPercentile markers(Markers theMarkers) {
-        this.markers = theMarkers.estimator(estimator);
-        return this;
     }
 
     /**
@@ -374,7 +303,7 @@ implements StorelessUnivariateStatistic, Serializable {
     private double maximum() {
         double val = Double.NaN;
         if (markers != null) {
-            val = markers.markerArray[PSQUARE_CONSTANT].markerHeight;
+            val = markers.height(PSQUARE_CONSTANT);
         } else if (!initialFive.isEmpty()) {
             val = initialFive.get(initialFive.size() - 1);
         }
@@ -389,7 +318,7 @@ implements StorelessUnivariateStatistic, Serializable {
     private double minimum() {
         double val = Double.NaN;
         if (markers != null) {
-            val = markers.markerArray[1].markerHeight;
+            val = markers.height(1);
         } else if (!initialFive.isEmpty()) {
             val = initialFive.get(0);
         }
@@ -397,61 +326,80 @@ implements StorelessUnivariateStatistic, Serializable {
     }
 
     /**
-     * Markers is an encapsulation of the five markers/buckets as indicated
-     * in the original works of <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup></a>
-     * algorithm.
-     * <p>
-     * This is a protected static class allowed for external enhancement and
-     * testability.
+     * Markers is an encapsulation of the five markers/buckets as indicated in
+     * the original works.
      */
-    protected static class Markers implements Serializable {
+    private static class Markers implements PSquareMarkers, Serializable {
         /**
-         * Serializable id
+         * Serial version id
          */
-        private static final long serialVersionUID = -8907278663345006480L;
+        private static final long serialVersionUID = 1L;
+
         /**
          * Array of 5+1 {@link Marker}s (The first marker is dummy just so we
-         * can match the rest of indexes [1-5] indicated in <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm paper</a> which follows unit based index)
+         * can match the rest of indexes [1-5] indicated in the original works
+         * which follows unit based index)
          */
         private final Marker[] markerArray;
+
         /**
-         * Kth cell belonging to [1-5] of the {@link #markerArray}. No need
-         * for this to be serialized
+         * Kth cell belonging to [1-5] of the {@link #markerArray}. No need for
+         * this to be serialized
          */
         private transient int k = -1;
-        /**
-         * The {@link PSquareEstimator} instance to be set every time. Not
-         * serializing this
-         */
-        private transient PSquareEstimator estimator;
 
         /**
          * Constructor
          *
-         * @param initial is a list of first five values
-         * @param p is the quantile needed
-         * @throws InsufficientDataException in case if initial list is null or
-         *             having less than 5 elements
-         *
+         * @param theMarkerArray marker array to be used
          */
-        Markers(List<Double> initial, double p) {
-            int countObserved = initial == null ? -1 : initial.size();
+        private Markers(final Marker[] theMarkerArray) {
+            MathUtils.checkNotNull(theMarkerArray);
+            markerArray = theMarkerArray;
+            for (int i = 1; i < PSQUARE_CONSTANT; i++) {
+                markerArray[i].previous(markerArray[i - 1])
+                .next(markerArray[i + 1]).index(i);
+            }
+            markerArray[0].previous(markerArray[0]).next(markerArray[1])
+            .index(0);
+            markerArray[5].previous(markerArray[4]).next(markerArray[5])
+            .index(5);
+        }
+
+        /**
+         * Constructor
+         *
+         * @param initialFive elements required to build Marker
+         * @param p quantile required to be computed
+         */
+        private Markers(final List<Double> initialFive, final double p) {
+            this(createMarkerArray(initialFive, p));
+        }
+
+        /**
+         * Creates a marker array using initial five elements and a quantile
+         *
+         * @param initialFive list of initial five elements
+         * @param p the pth quantile
+         * @return Marker array
+         */
+        private static Marker[] createMarkerArray(
+                final List<Double> initialFive, final double p) {
+            final int countObserved =
+                    initialFive == null ? -1 : initialFive.size();
             if (countObserved < PSQUARE_CONSTANT) {
                 throw new InsufficientDataException(
                         LocalizedFormats.INSUFFICIENT_OBSERVED_POINTS_IN_SAMPLE,
                         countObserved, PSQUARE_CONSTANT);
             }
-            Collections.sort(initial);
-            initialize(markerArray = new Marker[] {
+            Collections.sort(initialFive);
+            return new Marker[] {
                     new Marker(),// Null Marker
-                    new Marker(initial.get(0), 1, 0, 1),
-                    new Marker(initial.get(1), 1 + 2 * p, p / 2, 2),
-                    new Marker(initial.get(2), 1 + 4 * p, p, 3),
-                    new Marker(initial.get(3), 3 + 2 * p, (1 + p) / 2, 4),
-                    new Marker(initial.get(4), 5, 1, 5) });
+                    new Marker(initialFive.get(0), 1, 0, 1),
+                    new Marker(initialFive.get(1), 1 + 2 * p, p / 2, 2),
+                    new Marker(initialFive.get(2), 1 + 4 * p, p, 3),
+                    new Marker(initialFive.get(3), 3 + 2 * p, (1 + p) / 2, 4),
+                    new Marker(initialFive.get(4), 5, 1, 5) };
         }
 
         /**
@@ -459,7 +407,7 @@ implements StorelessUnivariateStatistic, Serializable {
          */
         @Override
         public int hashCode() {
-            int hash= estimator.hashCode() * 7;
+            int hash = 7;
             hash += markerArray[0].hashCode() * 31;
             hash += markerArray[1].hashCode() * 29;
             hash += markerArray[2].hashCode() * 23;
@@ -470,8 +418,8 @@ implements StorelessUnivariateStatistic, Serializable {
         }
 
         /**
-         * This equals method basically checks for {@link #markerArray} to be
-         * deep equals and {@link #estimator} to be of same class.
+         * {@inheritDoc}.This equals method basically checks for marker array to
+         * be deep equals.
          *
          * @param o is the other object
          * @return true if the object compares with this object are equivalent
@@ -484,71 +432,8 @@ implements StorelessUnivariateStatistic, Serializable {
             } else if (o != null && o instanceof Markers) {
                 Markers that = (Markers) o;
                 result = Arrays.deepEquals(markerArray, that.markerArray);
-                result = result && estimator.getClass().isAssignableFrom(
-                        that.estimator.getClass());
             }
             return result;
-        }
-
-        /**
-         * Accessor for getting array of {@link Marker} that is
-         * {@link #markerArray}
-         *
-         * @return {@link #markerArray}
-         */
-        Marker[] markerArray() {
-            return markerArray;
-        }
-
-        /**
-         * A Setter for setting the {@link PSquareEstimator} an instance of
-         * {@link PSquareInterpolatorEvaluator}
-         *
-         * @param pSquareEstimator The {@link PSquareEstimator} to be set
-         * @return this instance
-         * @throws NullArgumentException when estimator passed is null
-         */
-        Markers estimator(PSquareEstimator pSquareEstimator) {
-            if (pSquareEstimator == null) {
-                throw new NullArgumentException(
-                        LocalizedFormats.NULL_NOT_ALLOWED, "estimator");
-            }
-            this.estimator = pSquareEstimator;
-            return this;
-        }
-
-        /**
-         * Initialize markers with the passed {@link Marker} array
-         *
-         * @param markers passed in array of {@link Marker}
-         * @return this instance
-         */
-        Markers initialize(Marker[] markers) {
-            for (int i = 0; i < markers.length; i++) {
-                markerArray[i].initialize(markers[i]);
-            }
-            postConstruct();
-            return this;
-        }
-
-        /**
-         * A post construct method which builds the links and initializes marker
-         * indexes. It also sets the estimator.
-         *
-         */
-
-        void postConstruct() {
-            for (int i = 1; i < PSQUARE_CONSTANT; i++) {
-                markerArray[i].previous(markerArray[i - 1])
-                .next(markerArray[i + 1]).index(i);
-            }
-            markerArray[0].previous(markerArray[0]).next(markerArray[1])
-            .index(0);
-            markerArray[5].previous(markerArray[4]).next(markerArray[5])
-            .index(5);
-            if (estimator == null) {
-                estimator = new PSquareInterpolatorEvaluator();
-            }
         }
 
         /**
@@ -557,10 +442,10 @@ implements StorelessUnivariateStatistic, Serializable {
          * @param inputDataPoint is the data point passed
          * @return computed percentile
          */
-        public double processDataPoint(double inputDataPoint) {
+        public double processDataPoint(final double inputDataPoint) {
 
             // 1. Find cell and update minima and maxima
-            int kthCell = findCellAndUpdateMinMax(inputDataPoint);
+            final int kthCell = findCellAndUpdateMinMax(inputDataPoint);
 
             // 2. Increment positions
             incrementPositions(1, kthCell + 1, 5);
@@ -569,17 +454,19 @@ implements StorelessUnivariateStatistic, Serializable {
             updateDesiredPositions();
 
             // 3. Adjust heights of m[2-4] if necessary
-            adjustHeightsOfMarkers(estimator);
+            adjustHeightsOfMarkers();
 
             // 4. Return percentile
             return getPercentileValue();
         }
 
         /**
-         * @return {@link Marker#markerHeight} of mid point marker
+         * Returns the percentile computed thus far
+         *
+         * @return height of mid point marker
          */
         public double getPercentileValue() {
-            return markerArray[3].markerHeight;
+            return height(3);
         }
 
         /**
@@ -589,18 +476,18 @@ implements StorelessUnivariateStatistic, Serializable {
          * @return kth cell (of the markers ranging from 1-5) where observed
          *         sample fits
          */
-        private int findCellAndUpdateMinMax(double observation) {
+        private int findCellAndUpdateMinMax(final double observation) {
             k = -1;
-            if (observation < markerArray[1].markerHeight) {
+            if (observation < height(1)) {
                 markerArray[1].markerHeight = observation;
                 k = 1;
-            } else if (observation < markerArray[2].markerHeight) {
+            } else if (observation < height(2)) {
                 k = 1;
-            } else if (observation < markerArray[3].markerHeight) {
+            } else if (observation < height(3)) {
                 k = 2;
-            } else if (observation < markerArray[4].markerHeight) {
+            } else if (observation < height(4)) {
                 k = 3;
-            } else if (observation <= markerArray[5].markerHeight) {
+            } else if (observation <= height(5)) {
                 k = 4;
             } else {
                 markerArray[5].markerHeight = observation;
@@ -611,14 +498,23 @@ implements StorelessUnivariateStatistic, Serializable {
 
         /**
          * Adjust marker heights by setting quantile estimates to middle markers
-         *
-         * @param pSquareEstimator The {@link PSquareEstimator} to be used for
-         *            adjusting heights
          */
-        private void adjustHeightsOfMarkers(PSquareEstimator pSquareEstimator) {
+        private void adjustHeightsOfMarkers() {
             for (int i = 2; i <= 4; i++) {
-                markerArray[i].estimate(pSquareEstimator);
+                estimate(i);
             }
+        }
+
+        /**
+         * {@inheritDoc}.
+         */
+        public double estimate(final int index) {
+            final int lo = 2;
+            final int hi = 4;
+            if (index < lo || index > hi) {
+                throw new OutOfRangeException(index, lo, hi);
+            }
+            return markerArray[index].estimate();
         }
 
         /**
@@ -629,7 +525,8 @@ implements StorelessUnivariateStatistic, Serializable {
          * @param startIndex start index of the marker array
          * @param endIndex end index of the marker array
          */
-        private void incrementPositions(int d, int startIndex, int endIndex) {
+        private void incrementPositions(final int d, final int startIndex,
+                final int endIndex) {
             for (int i = startIndex; i <= endIndex; i++) {
                 markerArray[i].incrementPosition(d);
             }
@@ -646,8 +543,8 @@ implements StorelessUnivariateStatistic, Serializable {
         }
 
         /**
-         * This basically calls the {@link #postConstruct()} to set up the
-         * linking indexes which is not captured while serializing.
+         * This basically sets previous and next markers after default read is
+         * done
          *
          * @param anInputStream the input stream to be deserialized
          * @throws ClassNotFoundException thrown when a desired class not found
@@ -657,116 +554,66 @@ implements StorelessUnivariateStatistic, Serializable {
                 throws ClassNotFoundException, IOException {
             // always perform the default de-serialization first
             anInputStream.defaultReadObject();
-            postConstruct();
+            // Build links
+            for (int i = 1; i < PSQUARE_CONSTANT; i++) {
+                markerArray[i].previous(markerArray[i - 1])
+                .next(markerArray[i + 1]).index(i);
+            }
+            markerArray[0].previous(markerArray[0]).next(markerArray[1])
+            .index(0);
+            markerArray[5].previous(markerArray[4]).next(markerArray[5])
+            .index(5);
         }
 
         /**
-         * toString
+         * Return marker height given index
+         *
+         * @param markerIndex index of marker within (1,6)
+         * @return marker height
+         */
+        public double height(final int markerIndex) {
+            if (markerIndex >= markerArray.length || markerIndex <= 0) {
+                throw new OutOfRangeException(markerIndex, 1,
+                        markerArray.length);
+            }
+            return markerArray[markerIndex].markerHeight;
+        }
+
+        /**
+         * {@inheritDoc}.Clone Markers
+         *
+         * @return cloned object
+         */
+        @Override
+        public Object clone() {
+            return new Markers(new Marker[] { new Marker(),
+                    (Marker) markerArray[1].clone(),
+                    (Marker) markerArray[2].clone(),
+                    (Marker) markerArray[3].clone(),
+                    (Marker) markerArray[4].clone(),
+                    (Marker) markerArray[5].clone() });
+
+        }
+
+        /**
+         * toString returns the percentile computed
          *
          * @return string form
          */
         @Override
         public String toString() {
-
-            return String.format(
-                    "|%d|%s|%s|%s|%s|",
-                    k,
-                    DECIMAL_FORMAT.format(getPercentileValue()),
-                    doubleToString(integerMarkerPositions(), INT_FORMAT, " "),
-                    doubleToString(quantiles(), DECIMAL_FORMAT, " "),
-                    doubleToString(desiredMarkerPositions(), DECIMAL_FORMAT,
-                            " "));
-        }
-
-        /**
-         * doubleToString provides a formatted representation of double array
-         *
-         * @param doubleArray the double data array
-         * @param decimalFormat the formatter to be used for formatting
-         * @param delimiter a delimiter between elements
-         * @return text formatted representation of data array
-         */
-        private static String doubleToString(Double[] doubleArray,
-                DecimalFormat decimalFormat, String delimiter) {
-            StringBuilder sb = new StringBuilder();
-            String formatterElement = "%s" + delimiter;
-            Object[] values = new String[doubleArray.length];
-            for (int i = 0; i < doubleArray.length; i++) {
-                sb.append(formatterElement);
-                values[i] = decimalFormat.format(doubleArray[i]);
-            }
-            return String.format(sb.toString(), values);
-        }
-
-        /**
-         * The integral positions of all Markers as array
-         *
-         * @return an array of all of {@link Marker#integralMarkerPosition}s
-         */
-        public Double[] integerMarkerPositions() {
-
-            return new Double[] {
-                    Precision.round(markerArray[1].integralMarkerPosition, 0),
-                    Precision.round(markerArray[2].integralMarkerPosition, 0),
-                    Precision.round(markerArray[3].integralMarkerPosition, 0),
-                    Precision.round(markerArray[4].integralMarkerPosition, 0),
-                    Precision.round(markerArray[5].integralMarkerPosition, 0) };
-        }
-
-        /**
-         * The desired positions of all markers as an array
-         *
-         * @return an array of all of {@link Marker#desiredMarkerPosition}s
-         */
-        public Double[] desiredMarkerPositions() {
-            return new Double[] {
-                    Precision.round(markerArray[1].desiredMarkerPosition, 2),
-                    Precision.round(markerArray[2].desiredMarkerPosition, 2),
-                    Precision.round(markerArray[3].desiredMarkerPosition, 2),
-                    Precision.round(markerArray[4].desiredMarkerPosition, 2),
-                    Precision.round(markerArray[5].desiredMarkerPosition, 2) };
-        }
-
-        /**
-         * The quantile array of all the markers
-         *
-         * @return an array of all of {@link Marker#markerHeight}s
-         */
-        public Double[] quantiles() {
-            return new Double[] {
-                    Precision.round(markerArray[1].markerHeight, 2),
-                    Precision.round(markerArray[2].markerHeight, 2),
-                    Precision.round(markerArray[3].markerHeight, 2),
-                    Precision.round(markerArray[4].markerHeight, 2),
-                    Precision.round(markerArray[5].markerHeight, 2) };
-        }
-
-        /**
-         * Returns the markers as a {@link Map}
-         *
-         * @return a map of marker attributes
-         */
-        public Map<String, Object> toMap() {
-            Map<String, Object> map = new LinkedHashMap<String, Object>();
-            for (Marker mark : markerArray) {
-                map.putAll(mark.toMap());
-            }
-            return map;
+            return String.format("m1=[%s],m2=[%s],m3=[%s],m4=[%s],m5=[%s]",
+                    markerArray[1].toString(), markerArray[2].toString(),
+                    markerArray[3].toString(), markerArray[4].toString(),
+                    markerArray[5].toString());
         }
 
     }
 
     /**
-     *
-     * The class modeling the attributes of the marker of the <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup></a>
-     * algorithm.
-     * <p>
-     * This is a protected static class for the reason it could be extended for
-     * minor modification and also helps in testability
+     * The class modeling the attributes of the marker of the P-square algorithm
      */
-
-    protected static class Marker implements Serializable {
+    private static class Marker implements Serializable, Cloneable {
 
         /**
          * Serial Version ID
@@ -775,36 +622,31 @@ implements StorelessUnivariateStatistic, Serializable {
 
         /**
          * The marker index which is just a serial number for the marker in the
-         * marker array of 5+1. Will be set during
-         * {@link Markers#initialize(Marker[])}
+         * marker array of 5+1.
          */
         private int index;
 
         /**
-         * The integral marker position. Refer to the <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm paper</a> for the variable n
+         * The integral marker position. Refer to the variable n in the original
+         * works
          */
-        private double integralMarkerPosition;
+        private double intMarkerPosition;
 
         /**
-         * Desired marker position. Refer to the <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm paper</a> for the variable n'
+         * Desired marker position. Refer to the variable n' in the original
+         * works
          */
         private double desiredMarkerPosition;
 
         /**
-         * Marker height or the quantile. Refer to the <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm paper</a> for the variable q
+         * Marker height or the quantile. Refer to the variable q in the
+         * original works
          */
         private double markerHeight;
 
         /**
-         * Desired marker increment. Refer to the <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm paper</a> for the variable dn'
+         * Desired marker increment. Refer to the variable dn' in the original
+         * works
          */
         private double desiredMarkerIncrement;
 
@@ -813,155 +655,89 @@ implements StorelessUnivariateStatistic, Serializable {
          * is not serialized as they can be rebuilt during de-serialization.
          */
         private transient Marker next;
+
         /**
          * The previous marker links
          */
         private transient Marker previous;
 
         /**
+         * Non linear interpolator
+         */
+        private final UnivariateInterpolator nonLinear =
+                new NevilleInterpolator();
+
+        /**
+         * Linear interpolator which is not serializable.
+         */
+        private transient UnivariateInterpolator linear =
+                new LinearInterpolator();
+
+        /**
          * Default constructor
          */
-        public Marker() {
+        private Marker() {
             this.next = this.previous = this;
         }
 
         /**
-         * Constructor of a <a
-         * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-         * algorithm</a> marker with following parameters
+         * Constructor of the marker with following parameters
          *
          * @param heightOfMarker represent the quantile value
          * @param makerPositionDesired represent the desired marker position
          * @param markerPositionIncrement represent increments for position
          * @param markerPositionNumber represent the position number of marker
          */
-        public Marker(double heightOfMarker, double makerPositionDesired,
+        private Marker(double heightOfMarker, double makerPositionDesired,
                 double markerPositionIncrement, double markerPositionNumber) {
+            this();
             this.markerHeight = heightOfMarker;
             this.desiredMarkerPosition = makerPositionDesired;
             this.desiredMarkerIncrement = markerPositionIncrement;
-            this.integralMarkerPosition = markerPositionNumber;
-            this.next = this.previous = this; // initially self linked
+            this.intMarkerPosition = markerPositionNumber;
         }
 
         /**
-         * Navigates to the {@link #next} marker
-         *
-         * @return the next marker set
-         */
-        Marker next() {
-            return next;
-        }
-
-        /**
-         * Navigates to the {@link #previous} marker
-         *
-         * @return previous marker set
-         */
-        Marker previous() {
-            return previous;
-        }
-
-        /**
-         * Sets the {@link #previous} marker
+         * Sets the previous marker
          *
          * @param previousMarker the previous marker to the current marker in
          *            the array of markers
          * @return this instance
          */
-        Marker previous(Marker previousMarker) {
+        private Marker previous(final Marker previousMarker) {
+            MathUtils.checkNotNull(previousMarker);
             this.previous = previousMarker;
             return this;
         }
 
         /**
-         * Sets the {@link #next} marker
+         * Sets the next marker
          *
          * @param nextMarker the next marker to the current marker in the array
          *            of markers
          * @return this instance
          */
-        Marker next(Marker nextMarker) {
+        private Marker next(final Marker nextMarker) {
+            MathUtils.checkNotNull(nextMarker);
             this.next = nextMarker;
             return this;
         }
 
         /**
-         * Sets the {@link #index} of the marker
+         * Sets the index of the marker
          *
          * @param indexOfMarker the array index of the marker in marker array
          * @return this instance
          */
-        Marker index(int indexOfMarker) {
+        private Marker index(final int indexOfMarker) {
             this.index = indexOfMarker;
-            return this;
-        }
-
-        /**
-         * Initializes with passed in marker / copy construcor. No changes to
-         * {@link #previous} and {@link #next} pointers.
-         *
-         * @param marker whose values will be used for initializing this
-         *            instance
-         * @return this instance of marker
-         */
-        Marker initialize(Marker marker) {
-            return markerHeight(marker.markerHeight)
-                    .desiredMarkerPosition(marker.desiredMarkerPosition)
-                    .integralMarkerPosition(marker.integralMarkerPosition)
-                    .desiredMarkerIncrement(marker.desiredMarkerIncrement);
-        }
-
-        /**
-         * Sets quantile value to this instance which is also the height of
-         * marker
-         *
-         * @param quantile the quantile to be set
-         * @return this instance
-         */
-        Marker markerHeight(double quantile) {
-            this.markerHeight = quantile;
-            return this;
-        }
-
-        /**
-         * Sets desired position ( a double quantity) of this marker
-         *
-         * @param markerPositionDesired the desired position (real number)
-         * @return this instance
-         */
-        Marker desiredMarkerPosition(double markerPositionDesired) {
-            this.desiredMarkerPosition = markerPositionDesired;
-            return this;
-        }
-
-        /**
-         * Sets integral position of this marker
-         *
-         * @param markerPositionNumber the integral numbered position
-         * @return this instance
-         */
-        Marker integralMarkerPosition(double markerPositionNumber) {
-            this.integralMarkerPosition = markerPositionNumber;
-            return this;
-        }
-
-        /**
-         * Sets the desired increment of a marker. Please refer to original
-         * works to understand the concept of marker increment
-         *
-         * @param markerIncrementDesired the desired increment value of marker
-         * @return this instance
-         */
-        Marker desiredMarkerIncrement(double markerIncrementDesired) {
-            this.desiredMarkerIncrement = markerIncrementDesired;
             return this;
         }
 
         /**
          * Update desired Position with increment
          */
-        void updateDesiredPosition() {
+        private void updateDesiredPosition() {
             desiredMarkerPosition += desiredMarkerIncrement;
         }
 
@@ -970,17 +746,8 @@ implements StorelessUnivariateStatistic, Serializable {
          *
          * @param d a delta value to increment
          */
-        void incrementPosition(int d) {
-            integralMarkerPosition += d;
-        }
-
-        /**
-         * A name to the marker while representing in string form
-         *
-         * @return name
-         */
-        String name() {
-            return "m" + index;
+        private void incrementPosition(final int d) {
+            intMarkerPosition += d;
         }
 
         /**
@@ -988,71 +755,68 @@ implements StorelessUnivariateStatistic, Serializable {
          *
          * @return difference between desired and actual position
          */
-        double difference() {
-            return desiredMarkerPosition - integralMarkerPosition;
-        }
-
-        /**
-         * Builds a map of attribute names and their values and returns. the key
-         * variable names n, np, q, dn are to be understood and inferred from
-         * original works and the javadoc of {@link Marker}
-         *
-         * @return map containing keys (index, n ,np, q, dn with each of these
-         *         prefixed with {@link #name()}) and their corresponding values
-         *         contained in this instance
-         */
-        public Map<String, Object> toMap() {
-            Map<String, Object> map = new LinkedHashMap<String, Object>();
-            map.put(name() + ".index", (double) index);
-            map.put(name() + ".n", Precision.round(integralMarkerPosition, 0));
-            map.put(name() + ".np", Precision.round(desiredMarkerPosition, 2));
-            map.put(name() + ".q", Precision.round(markerHeight, 2));
-            map.put(name() + ".dn", Precision.round(desiredMarkerIncrement, 2));
-            return map;
-        }
-
-        /**
-         * {@inheritDoc}. This method basically returns a {@link #toMap() map
-         * view} of the attributes in a text form
-         */
-        @Override
-        public String toString() {
-            return toMap().toString();
+        private double difference() {
+            return desiredMarkerPosition - intMarkerPosition;
         }
 
         /**
          * estimate the quantile for the current marker
          *
-         * @param estimator an instance of {@link PSquareEstimator} to be used
-         *            for estimation
          * @return estimated quantile
          */
-        public double estimate(PSquareEstimator estimator) {
-            double di = difference();
-            boolean isNextHigher =
-                    next.integralMarkerPosition - integralMarkerPosition > 1;
-            boolean isPreviousLower =
-            previous.integralMarkerPosition - integralMarkerPosition < -1;
+        private double estimate() {
+            final double di = difference();
+            final boolean isNextHigher =
+                    next.intMarkerPosition - intMarkerPosition > 1;
+                    final boolean isPreviousLower =
+                            previous.intMarkerPosition - intMarkerPosition < -1;
 
-            if (di >= 1 && isNextHigher || di <= -1 && isPreviousLower){
-               int d = di >= 0 ? 1 : -1;
-               double[] x = new double[] { previous.integralMarkerPosition,
-                          integralMarkerPosition, next.integralMarkerPosition };
-               double[] y = new double[] { previous.markerHeight,
-                          markerHeight, next.markerHeight };
-               markerHeight =
-                          estimator.estimate(x, y, integralMarkerPosition + d);
-               incrementPosition(d);
-            }
-            return markerHeight;
+                    if (di >= 1 && isNextHigher || di <= -1 && isPreviousLower) {
+                        final int d = di >= 0 ? 1 : -1;
+                        final double[] xval =
+                                new double[] { previous.intMarkerPosition,
+                                intMarkerPosition, next.intMarkerPosition };
+                        final double[] yval =
+                                new double[] { previous.markerHeight, markerHeight,
+                                next.markerHeight };
+                        final double xD = intMarkerPosition + d;
+
+                        UnivariateFunction univariateFunction =
+                                nonLinear.interpolate(xval, yval);
+                        markerHeight = univariateFunction.value(xD);
+
+                        // If parabolic estimate is bad then turn linear
+                        if (isEstimateBad(yval, markerHeight)) {
+                            int delta = xD - xval[1] > 0 ? 1 : -1;
+                            final double[] xBad =
+                                    new double[] { xval[1], xval[1 + delta] };
+                            final double[] yBad =
+                                    new double[] { yval[1], yval[1 + delta] };
+                            MathArrays.sortInPlace(xBad, yBad);// since d can be +/- 1
+                            univariateFunction = linear.interpolate(xBad, yBad);
+                            markerHeight = univariateFunction.value(xD);
+                        }
+                        incrementPosition(d);
+                    }
+                    return markerHeight;
         }
 
         /**
-         * {@inheritDoc}<i>This equals method checks for equivalence of
-         * {@link #integralMarkerPosition},{@link #desiredMarkerPosition},
-         * {@link #desiredMarkerIncrement} and {@link #markerHeight} and as well
-         * checks if navigation pointers({@link #next} and {@link #previous})
-         * are the same between this and passed in object</i>
+         * Check if parabolic/nonlinear estimate is bad by checking if the
+         * ordinate found is beyond the y[0] and y[2].
+         *
+         * @param y the array to get the bounds
+         * @param yD the estimate
+         * @return true if yD is a bad estimate
+         */
+        private boolean isEstimateBad(final double[] y, final double yD) {
+            return yD <= y[0] || yD >= y[2];
+        }
+
+        /**
+         * {@inheritDoc}<i>This equals method checks for marker attributes and
+         * as well checks if navigation pointers(next and previous) are the same
+         * between this and passed in object</i>
          *
          * @param o Other object
          * @return true if this equals passed in other object o
@@ -1065,305 +829,87 @@ implements StorelessUnivariateStatistic, Serializable {
             } else if (o != null && o instanceof Marker) {
                 Marker that = (Marker) o;
 
-                boolean isSameHeight =
-                        Double.compare(markerHeight, that.markerHeight) == 0;
-                boolean isSamePosition =
-                        Double.compare(integralMarkerPosition,
-                                that.integralMarkerPosition) == 0;
-                boolean isSameDesiredPosition =
+                result = Double.compare(markerHeight, that.markerHeight) == 0;
+                result =
+                        result &&
+                        Double.compare(intMarkerPosition,
+                                that.intMarkerPosition) == 0;
+                result =
+                        result &&
                         Double.compare(desiredMarkerPosition,
                                 that.desiredMarkerPosition) == 0;
-                boolean isSameIncrement =
+                result =
+                        result &&
                         Double.compare(desiredMarkerIncrement,
                                 that.desiredMarkerIncrement) == 0;
 
-                result = isSameHeight  && isSamePosition;
-                result = result && isSameDesiredPosition && isSameIncrement;
-
-                boolean eitherNextNull = next == null || that.next == null;
-                boolean eitherPrevNull =
-                        previous == null || that.previous == null;
-                boolean isNextEqual =
-                        eitherNextNull ? true : next.index == that.next.index;
-                boolean isPrevEqual =
-                        eitherPrevNull ?
-                                true : previous.index == that.previous.index;
-
-                result = result  && isNextEqual && isPrevEqual;
+                result = result && next.index == that.next.index;
+                result = result && previous.index == that.previous.index;
             }
             return result;
         }
 
         @Override
         public int hashCode() {
-            int hash = (int) (markerHeight + integralMarkerPosition);
+            int hash = (int) (markerHeight + intMarkerPosition);
             hash += desiredMarkerPosition + desiredMarkerIncrement;
             hash = hash * 31 + previous.index * 23 + next.index * 19;
             return hash;
         }
 
         /**
-         * This method is used to set up some post construction initializations.
+         * Read Object to deserialize
          *
-         * @param anInputStream input stream to read from
-         * @throws ClassNotFoundException thrown when class for deserialization
-         *             is absent
-         * @throws IOException thrown when an IO Error occurs.
+         * @param anInstream Stream Object data
+         * @throws IOException thrown for IO Errors
+         * @throws ClassNotFoundException thrown for class not being found
          */
-        private void readObject(ObjectInputStream anInputStream)
+        private void readObject(ObjectInputStream anInstream)
                 throws ClassNotFoundException, IOException {
-            anInputStream.defaultReadObject();
-            previous = next = this;
-        }
-
-    }
-
-    /**
-     * An Interface modeling to estimate quantile based on <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-     * algorithm</a> which require 3 points to fit a parabolic curve. It also
-     * makes use of polynomial interpolation to find an estimate of the
-     * quantile;however switches to a linear interpolation in case if polynomial
-     * interpolation results in an undesirable results.Please refer to details
-     * in the <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<sup>2</sup>
-     * algorithm paper</a> as to when the switch happens to linear
-     * interpolation.
-     * <p>
-     * The reason for making this as protected interface is to allow for future
-     * possibilities of implementing it differently than the one available here
-     * or composing with different polynomial interpolations.
-     *
-     */
-    protected interface PSquareEstimator {
-        /**
-         * Estimates the quantile at a point based on passed in array of points
-         * specified by
-         * (x<sub>0</sub>,y<sub>0</sub>),(x<sub>1</sub>,y<sub>1</sub>),
-         * (x<sub>2</sub>,y<sub>2</sub>) in a two dimensional plane.
-         *
-         * @param x a 3 element array corresponding to x coordinates of the
-         *            three points (x[0], x[1], x[2])
-         * @param y a 3 element array corresponding to y coordinates of the
-         *            three points (y[0], y[1], y[2])
-         * @param z a x value off the value of x[1] by a distance d
-         * @return the p<sup>2</sup> estimation value of quantile at a value z
-         */
-        double estimate(double[] x, double[] y, double z);
-
-        /**
-         * Returns the number of times quadratic estimate was used finally
-         *
-         * @return the count of quadratic estimate used finally
-         */
-        int quadraticEstimationCount();
-
-        /**
-         * Returns the number of times linear estimate was chosen finally
-         *
-         * @return the count of linear estimate used finally
-         */
-        int linearEstimationCount();
-    }
-
-    /**
-     * This is a modular implementation of <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<SUP>2</SUP>
-     * Algorithm</a> estimation by delegating to existing instances of
-     * {@link UnivariateInterpolator} such as {@link NevilleInterpolator} for
-     * the first estimation based on quadratic formulae and a
-     * {@link LinearInterpolator} in case if needed for correction as is
-     * reasoned out in the <a
-     * href=http://www.cs.wustl.edu/~jain/papers/ftp/psqr.pdf>P<SUP>2</SUP>
-     * Algorithm</a> for the choice of quadratic vs linear estimation
-     * <p>
-     * This is a protected static class allowing for possible enhancements on
-     * the univariate interpolation and as well helps in testability
-     *
-     */
-    protected static class PSquareInterpolatorEvaluator implements
-    UnivariateInterpolator, PSquareEstimator, Serializable {
-        /**
-         * Serial ID
-         */
-        private static final long serialVersionUID = -5034313858440101891L;
-        /**
-         * A non linear interpolator such as {@link NevilleInterpolator} that
-         * first provides an interpolated value which will be tested for bounds.
-         */
-        private transient UnivariateInterpolator nonLinear =
-                new NevilleInterpolator();
-        /**
-         * A linear interpolator used to correct in case if non linear
-         * interpolated gives an out of bounds.
-         */
-        private transient UnivariateInterpolator linear =
-                new LinearInterpolator();
-        /**
-         * linearEstimationCount counts the number of times for linear
-         * estimation used.
-         */
-        private transient int linearEstimationCount = 0;
-        /**
-         * quadraticEstimationCount counts the number of times for non linear
-         * estimation used.(q actually means quadratic).
-         */
-        private transient int quadraticEstimationCount = 0;
-        /**
-         * xD is the desired x+dth position for which quantile needs to be
-         * calculated. The increment d is computed in the algorithm earlier.
-         */
-        private transient double xD = Double.NaN;
-
-        /**
-         * {@inheritDoc}This method checks for suitability of non linear
-         * interpolator to be used given the three points that fit a parabola.
-         * However it may switch to linear interpolator if nonlinear estimates
-         * are bad. The interpolate method computes the interpolated value for a
-         * given value of x={@link #xD} which is already set during
-         * construction.
-         *
-         * @return an interpolating polynomial function
-         * @throws NotANumberException in case if xD is set as
-         *             {@link Double#NaN}
-         * @throws NullArgumentException in case of null arrays
-         * @throws DimensionMismatchException in case xval[] and yval[] have
-         *             differing lengths
-         */
-        @SuppressWarnings("serial")
-        public UnivariateFunction interpolate(double[] xval, double[] yval) {
-            if (Double.isNaN(xD)) {
-                throw new NotANumberException() {
-                    {
-                        getContext().addMessage(
-                                LocalizedFormats.NAN_NOT_ALLOWED);
-                    }
-                };
-            }
-            if (xval == null || yval == null) {
-                throw new NullArgumentException(
-                        LocalizedFormats.ARRAY_ZERO_LENGTH_OR_NULL_NOT_ALLOWED);
-            }
-            if (xval.length < 3 || xval.length != yval.length) {
-                throw new DimensionMismatchException(
-                      LocalizedFormats.INSUFFICIENT_DIMENSION, xval.length, 3);
-            }
-
-            double[] x = xval;
-            double[] y = yval;
-            UnivariateFunction univariateFunction = nonLinear.interpolate(x, y);
-            double yD = univariateFunction.value(xD);
-
-            if (isEstimateBad(y, yD)) {
-                int d = xD - x[1] > 0 ? 1 : -1;
-                x = new double[] { x[1], x[1 + d] };
-                y = new double[] { y[1], y[1 + d] };
-                MathArrays.sortInPlace(x, y);// since d can be +/- 1
-                univariateFunction = linear.interpolate(x, y);
-                linearEstimationCount++;
-            } else {
-                quadraticEstimationCount++;
-            }
-            return univariateFunction;
-        }
-
-        /**
-         * Check if parabolic/nonlinear estimate is bad by checking if the
-         * ordinate found is beyond the y[0] and y[2].
-         *
-         * @param y the array to get the bounds
-         * @param yD the estimate
-         * @return true if yD is a bad estimate
-         */
-        private boolean isEstimateBad(double[] y, double yD) {
-            return yD <= y[0] || yD >= y[2];
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        public double estimate(double[] x, double[] y, double z) {
-            xD = z;
-            return interpolate(x, y).value(z);
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        public int quadraticEstimationCount() {
-            return quadraticEstimationCount;
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        public int linearEstimationCount() {
-            return linearEstimationCount;
-        }
-
-        /**
-         * Sets xD
-         *
-         * @param xDesired desired x position
-         */
-        public void xD(double xDesired) {
-            this.xD = xDesired;
-        }
-
-        /**
-         * This method is used to set up some post construction initializations.
-         *
-         * @param anInputStream input stream to read from
-         * @throws ClassNotFoundException thrown when a class is absent for
-         *             deserializing
-         * @throws IOException thrown when IO Error occurs
-         */
-        private void readObject(ObjectInputStream anInputStream)
-                throws ClassNotFoundException, IOException {
-            anInputStream.defaultReadObject();
+            anInstream.defaultReadObject();
+            previous=next=this;
             linear = new LinearInterpolator();
-            nonLinear = new NevilleInterpolator();
-            xD = Double.NaN;
-            linearEstimationCount = 0;
-            quadraticEstimationCount = 0;
         }
 
+        /**
+         * Clone this instance
+         *
+         * @return cloned marker
+         */
         @Override
-        public boolean equals(Object o) {
-            boolean result = o != null && getClass().isAssignableFrom(
-                    o.getClass());
-            if (result) {
-                PSquareInterpolatorEvaluator e =
-                        (PSquareInterpolatorEvaluator) o;
-                boolean isLinearEqual =
-                        linearEstimationCount == e.linearEstimationCount;
-                boolean isQuadraticEqual =
-                        quadraticEstimationCount == e.quadraticEstimationCount;
-                result = isLinearEqual  && isQuadraticEqual;
-            }
-            return result;
+        public Object clone() {
+            return new Marker(markerHeight, desiredMarkerPosition,
+                    desiredMarkerIncrement, intMarkerPosition);
         }
 
+        /**
+         * {@inheritDoc}. This method basically returns the attributes in a text
+         * form
+         */
         @Override
-        public int hashCode() {
-            return getClass().hashCode() + linear.getClass().hashCode();
+        public String toString() {
+            return String.format(
+                    "index=%.0f,n=%.0f,np=%.2f,q=%.2f,dn=%.2f,prev=%d,next=%d",
+                    (double) index, Precision.round(intMarkerPosition, 0),
+                    Precision.round(desiredMarkerPosition, 2),
+                    Precision.round(markerHeight, 2),
+                    Precision.round(desiredMarkerIncrement, 2), previous.index,
+                    next.index);
         }
     }
 
     /**
      * A simple fixed capacity list that has an upper bound to grow till
      * capacity. This class is private as it has very specific purpose of
-     * bounding the capacity required for pSquare algorithm.. TODO:
-     * AbstractSerializablListDecorator of commons collection could be used as a
-     * base instead and whenever pom.xml of math3 allows adding the same.
+     * bounding the capacity required for pSquare algorithm..
      * <p>
      * This class is private static as it its specifically needed for this
      * algoritm to work
      *
      * @param <E>
      */
-    private static class FixedCapacityList<E> extends ArrayList<E>
-    implements Serializable {
+    private static class FixedCapacityList<E> extends ArrayList<E> implements
+    Serializable {
         /**
          * Serialization Version Id
          */
@@ -1379,7 +925,7 @@ implements StorelessUnivariateStatistic, Serializable {
          *
          * @param fixedCapacity the capacity to be fixed for this list
          */
-        public FixedCapacityList(int fixedCapacity) {
+        public FixedCapacityList(final int fixedCapacity) {
             super(fixedCapacity);
             this.capacity = fixedCapacity;
         }
@@ -1391,8 +937,8 @@ implements StorelessUnivariateStatistic, Serializable {
          * @return true if addition is successful and false otherwise
          */
         @Override
-        public boolean add(E e) {
-            return size() < capacity() ? super.add(e) : false;
+        public boolean add(final E e) {
+            return size() < capacity ? super.add(e) : false;
         }
 
         /**
@@ -1405,17 +951,70 @@ implements StorelessUnivariateStatistic, Serializable {
         @Override
         public boolean addAll(Collection<? extends E> collection) {
             boolean isCollectionLess =
-                   collection != null && collection.size() + size() <= capacity;
+                    collection != null &&
+                    collection.size() + size() <= capacity;
             return isCollectionLess ? super.addAll(collection) : false;
         }
+    }
+
+    /**
+     * A creation method to build Markers
+     *
+     * @param initialFive list of initial five elements
+     * @param p the quantile desired
+     * @return an instance of PSquareMarkers
+     */
+    public static PSquareMarkers newMarkers(final List<Double> initialFive,
+            final double p) {
+        return new Markers(initialFive, p);
+    }
+
+    /**
+     * An interface that encapsulate important and essential abstractions of the
+     * P-square algorithm markers as is explained in the original works. This
+     * interface is exposed with a protected access to help in testability.
+     */
+    protected interface PSquareMarkers extends Cloneable {
+        /**
+         * Returns Ppercentile value computed thus far
+         *
+         * @return percentile
+         */
+        double getPercentileValue();
 
         /**
-         * Return the capacity set during construction
+         * A clone function to clone the current instance.Its created as an
+         * interface method as well for convenience though Cloneable is just a
+         * marker interface
          *
-         * @return capacity of list
+         * @return clone of this instance
          */
-        public int capacity() {
-            return capacity;
-        }
+        Object clone();
+
+        /**
+         * Returns the marker height(or percentile) of a given marker index.
+         *
+         * @param markerIndex is the index of marker in the marker array
+         * @return percentile value of the marker index passed
+         * @throws OutOfRangeException in case if index is not within [1-5]
+         */
+        double height(final int markerIndex);
+
+        /**
+         * Process a data point by moving the marker heights based on esimator
+         *
+         * @param inputDataPoint is the data point passed
+         * @return computed percentile
+         */
+        double processDataPoint(final double inputDataPoint);
+
+        /**
+         * An Estimate of the percentile value of a given Marker
+         *
+         * @param index the marker's index in the array of markers
+         * @return percentile estimate
+         * @throws OutOfRangeException in case if index is not within [1-5]
+         */
+        double estimate(final int index);
     }
 }
