@@ -149,11 +149,13 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      *            estimation techniques}
      * @throws MathIllegalArgumentException if p is not greater than 0 and less
      *             than or equal to 100
+     * @throws NullArgumentException if technique passed in null
      */
     public Percentile(final double p, EstimationTechnique technique)
             throws MathIllegalArgumentException {
         setQuantile(p);
         cachedPivots = null;
+        MathUtils.checkNotNull(technique);
         estimationTechnique = technique;
     }
 
@@ -307,7 +309,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             final int length, final double p) throws MathIllegalArgumentException {
 
         test(values, begin, length);
-
         if (p > 100 || p <= 0) {
             throw new OutOfRangeException(
                     LocalizedFormats.OUT_OF_BOUNDS_QUANTILE_VALUE, p, 0, 100);
@@ -318,8 +319,8 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         if (length == 1) {
             return values[begin]; // always return single value for n = 1
         }
-        double[] work = getWorkArray(values, begin, length);
-        int[] pivotsHeap = getPivots(values);
+        final double[] work = getWorkArray(values, begin, length);
+        final int[] pivotsHeap = getPivots(values);
         return estimationTechnique.evaluate(work, pivotsHeap, length, p);
     }
 
@@ -488,6 +489,15 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
                        Double.compare(p, 1d) == 0 ? N : p * (N + 1);
             }
 
+            /**
+             * {@inheritDoc}. The DEFAULT technique does'nt need filtering and
+             * hence dummied out
+             */
+            @Override
+            protected double[] preProcess(final double[] work,
+                    final AtomicInteger lengthHolder) {
+                return work;
+            }
         },
         /**
          * The method R1 is also referred as SAS-3 and has the following
@@ -673,6 +683,9 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         };
 
+        /** Exclusion Set which can be overriden*/
+        protected Set<Double> exclusions=Collections.singleton(Double.NaN);
+
         /**
          * Simple name of the computation technique such as R-1, R-2. Please
          * refer to wikipedia to get the context of these names.
@@ -684,9 +697,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
          * context of these names.
          */
         private String description;
-
-        /** Exclusion Set which can be overriden*/
-        protected Set<Double> exclusions=Collections.singleton(Double.NaN);
 
         /**
          * Constructor
@@ -884,27 +894,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         private final PivotingStrategy pivoting;
 
         /**
-         * Constructor
-         *
-         * @param values array containing input numbers
-         * @param pivots pivots that are pre-cached used for efficiency
-         */
-        private KthSelector(final double[] values, final int[] pivots) {
-            this(values, pivots, PivotingStrategy.MEDIAN_OF_3);
-        }
-
-        /**
-         * A conveneient wrapper for pivotIndex
-         *
-         * @param begin start index to include
-         * @param end ending index to include
-         * @return pivot
-         */
-        private int pivotIndex(int begin, int end) {
-            return pivoting.pivotIndex(work, begin, end);
-        }
-
-        /**
          * Constructor with no cached pivots
          *
          * @param values array containing input numbers
@@ -914,7 +903,17 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         }
 
         /**
-         * Constructor
+         * Constructor with cached pivots
+         *
+         * @param values array containing input numbers
+         * @param pivots pivots that are pre-cached used for efficiency
+         */
+        private KthSelector(final double[] values, final int[] pivots) {
+            this(values, pivots, PivotingStrategy.MEDIAN_OF_3);
+        }
+
+        /**
+         * Constructor with soecified pivots cache and strategy
          *
          * @param values array containing imput numbers
          * @param pivots pivots that are pre-cached used for efficiency
@@ -966,18 +965,29 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
                     // the element is in the left partition
                     end = pivot;
                     node =
-                            FastMath.min(2 * node + 1, usePivotsHeap
-                                    ? pivotsHeap.length : end);
+                            FastMath.min(2 * node + 1, usePivotsHeap ?
+                                    pivotsHeap.length : end);
                 } else {
                     // the element is in the right partition
                     begin = pivot + 1;
                     node =
-                            FastMath.min(2 * node + 2, usePivotsHeap
-                                    ? pivotsHeap.length : end);
+                            FastMath.min(2 * node + 2, usePivotsHeap ?
+                                    pivotsHeap.length : end);
                 }
             }
             Arrays.sort(work, begin, end);
             return work[k];
+        }
+
+        /**
+         * A conveneient wrapper for pivotIndex
+         *
+         * @param begin start index to include
+         * @param end ending index to include
+         * @return pivot
+         */
+        private int pivotIndex(int begin, int end) {
+            return pivoting.pivotIndex(work, begin, end);
         }
 
         /**
@@ -1031,6 +1041,9 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * Central/End pivot ec.
      */
     private static enum PivotingStrategy {
+        /**
+         * This is the classic median of 3 approach for pivoting.
+         */
         MEDIAN_OF_3() {
             /**
              * {@inheritDoc}.This in specific makes use of median of 3.
@@ -1039,7 +1052,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
              * @param end index after the last element of the slice
              * @return the index of the pivot element chosen between the
              * first, middle and the last element of the array slice
-             * throws {@link OutOfRangeException} whenever indices exceeds range
+             * @throws OutOfRangeException when indices exceeds range
              */
             @Override
             public int pivotIndex(final double[] work, final int begin,
@@ -1074,6 +1087,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
 
         // RANDOM_PIVOT(){}
+        // CENTRAL_PIVOT(){}
         ;
 
         /**
