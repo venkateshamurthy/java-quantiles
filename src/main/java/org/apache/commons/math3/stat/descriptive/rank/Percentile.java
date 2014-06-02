@@ -17,9 +17,16 @@
 package org.apache.commons.math3.stat.descriptive.rank;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
+import org.apache.commons.math3.exception.NotFiniteNumberException;
 import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
 import org.apache.commons.math3.exception.util.LocalizedFormats;
@@ -92,6 +99,9 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     /** Maximum number of partitioning pivots cached (each level double the number of pivots). */
     private static final int MAX_CACHED_LEVELS = 10;
 
+    /** Any of the {@link EstimationTechnique}s such as DEFAULT can be used. */
+    private final EstimationTechnique estimationTechnique;
+
     /** Determines what percentile is computed when evaluate() is activated
      * with no quantile argument */
     private double quantile = 0.0;
@@ -115,8 +125,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * than or equal to 100
      */
     public Percentile(final double p) throws MathIllegalArgumentException {
-        setQuantile(p);
-        cachedPivots = null;
+        this(p, EstimationTechnique.DEFAULT);//uses DEFAULT Estimation
     }
 
     /**
@@ -127,8 +136,41 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * @throws NullArgumentException if original is null
      */
     public Percentile(Percentile original) throws NullArgumentException {
+        estimationTechnique = original.getEstimationTechnique();
         copy(original, this);
     }
+
+    /**
+     * Constructs a percentile with the specific quantile value and an
+     * {@link EstimationTechnique}.
+     *
+     * @param p the quantile to be computed
+     * @param technique one of the percentile {@link EstimationTechnique
+     *            estimation techniques}
+     * @throws MathIllegalArgumentException if p is not greater than 0 and less
+     *             than or equal to 100
+     */
+    public Percentile(final double p, EstimationTechnique technique)
+            throws MathIllegalArgumentException {
+        setQuantile(p);
+        cachedPivots = null;
+        estimationTechnique = technique;
+    }
+
+    /**
+     * Constructs a default percentile with a specific
+     * {@link EstimationTechnique}.
+     *
+     * @param technique one of the percentile {@link EstimationTechnique
+     *            estimation techniques}
+     * @throws MathIllegalArgumentException if p is not greater than 0 and less
+     *             than or equal to 100
+     */
+    public Percentile(EstimationTechnique technique)
+            throws MathIllegalArgumentException {
+        this(50, technique);
+    }
+
 
     /** {@inheritDoc} */
     @Override
@@ -266,7 +308,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         test(values, begin, length);
 
-        if ((p > 100) || (p <= 0)) {
+        if (p > 100 || p <= 0) {
             throw new OutOfRangeException(
                     LocalizedFormats.OUT_OF_BOUNDS_QUANTILE_VALUE, p, 0, 100);
         }
@@ -276,107 +318,11 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         if (length == 1) {
             return values[begin]; // always return single value for n = 1
         }
-
-        double n = length;
-        double pos = computeQuantilePosition(p,n);//p * (n + 1) / 100;
-        double fpos = FastMath.floor(pos);
-        int intPos = (int) fpos;
-        double dif = pos - fpos;
-
-        double[] work;
-        int[] pivotsHeap;
-        if (values == getDataRef()) {
-            work = getDataRef();
-            pivotsHeap = cachedPivots;
-        } else {
-            work = new double[length];
-            System.arraycopy(values, begin, work, 0, length);
-            pivotsHeap = new int[(0x1 << MAX_CACHED_LEVELS) - 1];
-            Arrays.fill(pivotsHeap, -1);
-        }
-
-        if (pos < 1) {
-            return select(work, pivotsHeap, 0);
-        }
-        if (pos >= n) {
-            return select(work, pivotsHeap, length - 1);
-        }
-        double lower = select(work, pivotsHeap, intPos - 1);
-        double upper = select(work, pivotsHeap, intPos);
-        return lower + dif * (upper - lower);
-    }
-    /**
-     * This method computes the quantile position that can be used to get the
-     * value.
-     * <p>
-     * One could override this method in sub classes to provide slight variations
-     * in picking up p*(n+/-1) position. For example; The percentile calculation
-     * in few spread sheet programs may require p*(n-1) th position and this
-     * possibility of variation can help matching.
-     *
-     * @param pthQuantile the pth quantile
-     * @param length of data array
-     * @return quantile position to be used for getting the quantile value
-     */
-    protected double computeQuantilePosition(double pthQuantile, double length) {
-        MathUtils.checkNotNull(pthQuantile);
-        MathUtils.checkNotNull(length);
-        return pthQuantile*(length+1)/100;
+        double[] work = getWorkArray(values, begin, length);
+        int[] pivotsHeap = getPivots(values);
+        return estimationTechnique.evaluate(work, pivotsHeap, length, p);
     }
 
-    /**
-     * Select the k<sup>th</sup> smallest element from work array
-     * @param work work array (will be reorganized during the call)
-     * @param pivotsHeap set of pivot index corresponding to elements that
-     * are already at their sorted location, stored as an implicit heap
-     * (i.e. a sorted binary tree stored in a flat array, where the
-     * children of a node at index n are at indices 2n+1 for the left
-     * child and 2n+2 for the right child, with 0-based indices)
-     * @param k index of the desired element
-     * @return k<sup>th</sup> smallest element
-     */
-    private double select(final double[] work, final int[] pivotsHeap, final int k) {
-
-        int begin = 0;
-        int end   = work.length;
-        int node  = 0;
-
-        while (end - begin > MIN_SELECT_SIZE) {
-
-            final int pivot;
-            if ((node < pivotsHeap.length) && (pivotsHeap[node] >= 0)) {
-                // the pivot has already been found in a previous call
-                // and the array has already been partitioned around it
-                pivot = pivotsHeap[node];
-            } else {
-                // select a pivot and partition work array around it
-                pivot = partition(work, begin, end, medianOf3(work, begin, end));
-                if (node < pivotsHeap.length) {
-                    pivotsHeap[node] =  pivot;
-                }
-            }
-
-            if (k == pivot) {
-                // the pivot was exactly the element we wanted
-                return work[k];
-            } else if (k < pivot) {
-                // the element is in the left partition
-                end  = pivot;
-                node = FastMath.min(2 * node + 1, pivotsHeap.length); // the min is here to avoid integer overflow
-            } else {
-                // the element is in the right partition
-                begin = pivot + 1;
-                node  = FastMath.min(2 * node + 2, pivotsHeap.length); // the min is here to avoid integer overflow
-            }
-
-        }
-
-        // the element is somewhere in the small sub-array
-        // sort the sub-array using insertion sort
-        insertionSort(work, begin, end);
-        return work[k];
-
-    }
 
     /** Select a pivot index as the median of three
      * @param work data array
@@ -384,92 +330,14 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * @param end index after the last element of the slice
      * @return the index of the median element chosen between the
      * first, the middle and the last element of the array slice
+     * @deprecated Please refrain from using this method as this pivoting
+                   strategy is modeled elsewhere
      */
+    @Deprecated
     int medianOf3(final double[] work, final int begin, final int end) {
-
-        final int inclusiveEnd = end - 1;
-        final int    middle    = begin + (inclusiveEnd - begin) / 2;
-        final double wBegin    = work[begin];
-        final double wMiddle   = work[middle];
-        final double wEnd      = work[inclusiveEnd];
-
-        if (wBegin < wMiddle) {
-            if (wMiddle < wEnd) {
-                return middle;
-            } else {
-                return (wBegin < wEnd) ? inclusiveEnd : begin;
-            }
-        } else {
-            if (wBegin < wEnd) {
-                return begin;
-            } else {
-                return (wMiddle < wEnd) ? inclusiveEnd : middle;
-            }
-        }
-
+        return new KthSelector(work).pivotIndex(begin, end);
     }
 
-    /**
-     * Partition an array slice around a pivot
-     * <p>
-     * Partitioning exchanges array elements such that all elements
-     * smaller than pivot are before it and all elements larger than
-     * pivot are after it
-     * </p>
-     * @param work data array
-     * @param begin index of the first element of the slice
-     * @param end index after the last element of the slice
-     * @param pivot initial index of the pivot
-     * @return index of the pivot after partition
-     */
-    private int partition(final double[] work, final int begin, final int end, final int pivot) {
-
-        final double value = work[pivot];
-        work[pivot] = work[begin];
-
-        int i = begin + 1;
-        int j = end - 1;
-        while (i < j) {
-            while ((i < j) && (work[j] > value)) {
-                --j;
-            }
-            while ((i < j) && (work[i] < value)) {
-                ++i;
-            }
-
-            if (i < j) {
-                final double tmp = work[i];
-                work[i++] = work[j];
-                work[j--] = tmp;
-            }
-        }
-
-        if ((i >= end) || (work[i] > value)) {
-            --i;
-        }
-        work[begin] = work[i];
-        work[i]     = value;
-        return i;
-
-    }
-
-    /**
-     * Sort in place a (small) array slice using insertion sort
-     * @param work array to sort
-     * @param begin index of the first element of the slice to sort
-     * @param end index after the last element of the slice to sort
-     */
-    private void insertionSort(final double[] work, final int begin, final int end) {
-        for (int j = begin + 1; j < end; j++) {
-            final double saved = work[j];
-            int i = j - 1;
-            while ((i >= begin) && (saved < work[i])) {
-                work[i + 1] = work[i];
-                i--;
-            }
-            work[i + 1] = saved;
-        }
-    }
 
     /**
      * Returns the value of the quantile field (determines what percentile is
@@ -527,4 +395,698 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         dest.quantile = source.quantile;
     }
 
+    /**
+     * Get the work array to operate
+     *
+     * @param values the array of numbers
+     * @param begin index to start reading the array
+     * @param length the length of array to be read from the begin index
+     * @return work array sliced from values in the range [begin,begin+length)
+     */
+    private double[] getWorkArray(double[] values, final int begin,
+            final int length) {
+        double[] work;
+        if (values == getDataRef()) {
+            work = getDataRef();
+        } else {
+            work = new double[length];
+            System.arraycopy(values, begin, work, 0, length);
+        }
+        return work;
+    }
+
+    /**
+     * Get Pivots either cached or create one
+     *
+     * @param values array containing the input numbers
+     * @return cached pivots or a newly created one
+     */
+    private int[] getPivots(final double[] values) {
+        final int[] pivotsHeap;
+        if (values == getDataRef()) {
+            pivotsHeap = cachedPivots;
+        } else {
+            pivotsHeap = new int[(0x1 << MAX_CACHED_LEVELS) - 1];
+            Arrays.fill(pivotsHeap, -1);
+        }
+        return pivotsHeap;
+    }
+
+    /**
+     * Get the estimation technique set
+     *
+     * @return the estimationTechnique
+     */
+    public EstimationTechnique getEstimationTechnique() {
+        return estimationTechnique;
+    }
+
+    /**
+     * An enum on percentile estimation strategy as elucidated in <a
+     * href=http://en.wikipedia.org/wiki/Quantile>wikipedia on quantile</a>. The
+     * enum names are based on the techniques mentioned in wikipedia.
+     * <p>
+     * <b>Please note</b> whereever wikipedia mentioned in this enum's context;
+     * it is actually referring to <a
+     * href=http://en.wikipedia.org/wiki/Quantile>this page</a>.
+     * <p>
+     * Each enum has a MathJax comment about the formulaes used for index and
+     * estimate that is directly reffered from wikipedia for ready reference. <br>
+     * While this enum provides a pre-processing function in
+     * {@link #evaluate(double[], int[], int, double) evaluate} method for the
+     * input array, each specific enum may over-ride this to match computation
+     * closely with R script output
+     * <p>
+     * Each of these technique specializes in 2 aspects viz index and estimate
+     * <ll>
+     * <li>An index to calculate rough approximate index of estimated percentile
+     * <li>An estimate to interpolate/average/aggregate of percentile(s) found.
+     * </ll>
+     * <p>
+     * Users can now create percentile with explicit setting of this enum.
+     * <p>
+     * Reference : <a
+     * href=tolstoy.newcastle.edu.au/R/e17/help/att-1067/Quartiles_in_R
+     * .pdf>Quartiles_in_R.pdf</a> has custom simplified R definitions of R1,
+     * R2, R3 for quick reference
+     */
+    public static enum EstimationTechnique {
+        /**
+         * This is the default technique used in the {@link Percentile Apache
+         * Commons Math Percentile}
+         */
+        DEFAULT("DEFAULT", "Apache Commons") {
+            {
+                {
+                    exclusions=Collections.emptySet();
+                }
+            }
+
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 0d) == 0 ? 0 :
+                       Double.compare(p, 1d) == 0 ? N : p * (N + 1);
+            }
+
+        },
+        /**
+         * The method R1 is also referred as SAS-3 and has the following
+         * formulaes for index and estimates<br>
+         * index(<i>h</i>)=\( Np + 1/2\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( x_{\lceil h\,-\,1/2 \rceil} \).
+         * <p>
+         * Simplified R perspective from references:
+         *
+         * <pre>
+         * QuantileType1 <- function (v, p) {
+         *                                      v = sort(v)
+         *                                      m = 0
+         *                                      n = length(v)
+         *                                      j = floor((n * p) + m)
+         *                                      g = (n * p) + m - j
+         *                                      y = ifelse (g == 0, 0, 1)
+         *                                      ((1 - y) * v[j]) + (y * v[j+1])
+         *                                  }
+         * </pre>
+         */
+        R1("R-1", "SAS-3") {
+
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 0d) == 0 ? 0 : N * p + 0.5;
+            }
+
+            /**
+             * {@inheritDoc}This method is overridden to use ceil(pos-0.5)
+             */
+            @Override
+            protected double estimate(final double[] values,
+                    final int[] pivotsHeap, final double pos, final int length) {
+                return super.estimate(values, pivotsHeap, Math.ceil(pos - 0.5),
+                        length);
+            }
+
+        },
+        /**
+         * The method R2 is also referred as SAS-5 and has the following
+         * formulaes for index and estimates<br>
+         * index(<i>h</i>)=\( Np + 1/2\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( \frac{x_{\lceil h\,-\,1/2 \rceil} +
+         * x_{\lfloor h\,+\,1/2 \rfloor}}{2} \)
+         * <p>
+         * Simplified Type2 R Code perspective from references:
+         *
+         * <pre>
+         * QuantileType2 <- function (v, p) {
+         *                                     v = sort(v)
+         *                                     m = 0
+         *                                     n = length(v)
+         *                                     j = floor((n * p) + m)
+         *                                     g = (n * p) + m - j
+         *                                     y = ifelse (g == 0, 0.5, 1)
+         *                                     ((1 - y) * v[j]) + (y * v[j+1])
+         *                                   }
+         * </pre>
+         */
+        R2("R-2", "SAS-5") {
+
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 1d) == 0 ? N :
+                       Double.compare(p, 0d) == 0 ? 0 : N * p + 0.5;
+            }
+
+            /**
+             * {@inheritDoc}This technique in particular uses an average of
+             * value at ceil(p+0.5) and floor(p-0.5).
+             */
+            @Override
+            protected double estimate(final double[] values,
+                    final int[] pivotsHeap, final double pos, final int length) {
+                final double low =
+                        super.estimate(values, pivotsHeap,
+                                Math.ceil(pos - 0.5), length);
+                final double high =
+                        super.estimate(values, pivotsHeap,
+                                Math.floor(pos + 0.5), length);
+                return (low + high) / 2;
+            }
+
+        },
+        /**
+         * The method R3 is also referred as SAS-2 and has the following
+         * formulaes for index and estimates<br>
+         * index(<i>h</i>)=\( Np\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( x_{\lfloor h \rceil}\, \)
+         * <p>
+         * Simplified Type 3 R code representation from references
+         *
+         * <pre>
+         * QuantileType3 <- function (v, p) {
+         *                                     v = sort(v)
+         *                                     m = -0.5
+         *                                     n = length(v)
+         *                                     j = floor((n * p) + m)
+         *                                     g = (n * p) + m - j
+         *                                     y = ifelse(trunc(j/2)*2==j,
+         *                                              ifelse(g==0, 0, 1), 1)
+         *                                     ((1 - y) * v[j]) + (y * v[j+1])
+         *                                   }
+         * </pre>
+         */
+        R3("R-3", "SAS-2") {
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 0.5 / N) <= 0 ? 0 : Math.rint(N * p);
+            }
+
+        },
+        /**
+         * The method R4 is also referred as SAS-1 or ScyPy-(0,1) and has the
+         * following formulaes for index and estimates<br>
+         * index(<i>h</i>)=\( Np + 1/2\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( x_{\lfloor h \rfloor} + (h -
+         * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \)
+         */
+        R4("R-4", "SAS-1") {
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 1d / N) < 0 ? 0 :
+                       Double.compare(p, 1) == 0 ? N : N * p;
+            }
+
+        },
+
+        /**
+         * The method implements Microsoft Excel style computation and is also
+         * referred ScyPy-(1,1) and has the following formulaes for index and
+         * estimates<br>
+         * index(<i>h</i>)=\( (N-1)p + 1\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( x_{\lfloor h \rfloor} + (h -
+         * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \)
+         * <p>
+         * Simplified Type 7 R representation from references
+         *
+         * <pre>
+         * QuantileType7 <- function (v, p) {
+         *                                      v = sort(v)
+         *                                      h = ((length(v)-1)*p)+1
+         *                                      v[floor(h)]+  (
+         *                                         (h-floor(h))*
+         *                                         (v[floor(h)+1]- v[floor(h)])
+         *                                      )
+         *                                   }
+         * </pre>
+         */
+        R7("R-7", "Excel") {
+            @Override
+            protected double index(final double p, final int N) {
+                return Double.compare(p, 0d) == 0 ? 0 :
+                       Double.compare(p, 1d) == 0 ? N : 1 + (N - 1) * p;
+            }
+
+        },
+
+        /**
+         * Most recommended approach as per wikipedia as it provides an unbiased
+         * estimate which is distribution free.
+         * <p>
+         * The method is named R8 and is also referred ScyPy-(1/3,1/3) and has
+         * the following formulaes for index and estimates<br>
+         * index(<i>h</i>)=\( (N + 1/3)p + 1/3\, \)<br>
+         * estimate(<i>Q<sub>p</sub></i>)=\( x_{\lfloor h \rfloor} + (h -
+         * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \)
+         */
+        R8("R-8", "SciPy-(1/3,1/3)") {
+            @Override
+            protected double index(final double p, final int N) {
+                double oneThird = 1d / 3;
+                double nPlus = N + oneThird;
+                double nMinus = N - oneThird;
+                return Double.compare(p, 2 * oneThird / nPlus) < 0 ? 0 : Double
+                        .compare(p, nMinus / nPlus) >= 0 ? N : nPlus * p +
+                        oneThird;
+            }
+
+        };
+
+        /**
+         * Simple name of the computation technique such as R-1, R-2. Please
+         * refer to wikipedia to get the context of these names.
+         */
+        private String name;
+        /**
+         * An another description or alternate name for the computation
+         * technique such as SAS-1,SAS-2. Please refer to wikipedia to get the
+         * context of these names.
+         */
+        private String description;
+
+        /** Exclusion Set which can be overriden*/
+        protected Set<Double> exclusions=Collections.singleton(Double.NaN);
+
+        /**
+         * Constructor
+         *
+         * @param type type of tecnique as per wikipedia
+         * @param alternateName an another name for the percentile estimation
+         *            technique that is mentioned in wikiepedia
+         */
+        EstimationTechnique(String type, String alternateName) {
+            this.name = type;
+            this.description = alternateName;
+        }
+
+        /**
+         * Finds the index of array that can be used as starting value to find
+         * and do interpolate value in
+         * {@link #estimate(double[], int[], double, int) estimate} method.
+         * <p>
+         * This index calculation is specific to each computation technique and
+         * hence is implemented specifically in each of EstimationTechnique
+         * (enumerated as R1 - R9).
+         *
+         * @param p the pth quantile
+         * @param N the total number of array elements in the work array
+         * @return a computed real valued index as explained wikipedia
+         */
+        protected abstract double index(final double p, final int N);
+
+        /**
+         * Estimation based on kth selection. This may be overridden in
+         * sub-classes/enums to compute slightly different estimations, such as
+         * averaging etc.
+         *
+         * @param work array of numbers to be used for finding the percentile
+         * @param pos indicated positional index prior computed from calling
+         *            {@link #index(double, int)}
+         * @param pivotsHeap a pre-populated cache if exists; will be used
+         * @param length size of array considered
+         * @return estimated percentile
+         * @see #R2
+         */
+        protected double estimate(final double[] work, final int[] pivotsHeap,
+                final double pos, final int length) {
+
+            double fpos = FastMath.floor(pos);
+            int intPos = (int) fpos;
+
+            double dif = pos - fpos;
+            KthSelector kthSelector = new KthSelector(work, pivotsHeap);
+            if (pos < 1) {
+                return kthSelector.select(0);
+            }
+            if (pos >= length) {
+                return kthSelector.select(length - 1);
+            }
+            double lower = kthSelector.select(intPos - 1);
+            double upper = kthSelector.select(intPos);
+            return lower + dif * (upper - lower);
+        }
+
+        /**
+         * Evaluate method to compute the percentile for a given bounded array.
+         * This basically calls the {@link #index(double, int) index function}
+         * and then calls {@link #estimate(double[], int[], double, int)
+         * estimate function} to return the estimated percentile value.
+         *
+         * @param work array of numbers to be used for finding the percentile
+         * @param pivotsHeap a prior cached heap which can speed up estimation
+         * @param length the number of array elements to include
+         * @param p the pth quantile to be computed
+         * @return estimated percentile
+         * @throws OutOfRangeException if length or p is out of range
+         * @throws NullArgumentException if work array is null
+         */
+        protected double evaluate(final double[] work, final int[] pivotsHeap,
+                final int length, final double p) {
+            MathUtils.checkNotNull(work);
+            if (p > 100 || p <= 0) {
+                throw new OutOfRangeException(
+                        LocalizedFormats.OUT_OF_BOUNDS_QUANTILE_VALUE,
+                        p, 0, 100);
+            }
+            if (length < 0 || length > work.length) {
+                throw new OutOfRangeException(length, 0, work.length);
+            }
+            final double quantile=p/100;
+            final AtomicInteger lengthHolder=new AtomicInteger(length);
+            final double[] newWork=preProcess(work,lengthHolder);
+            return estimate(newWork, pivotsHeap,
+                    index(quantile, lengthHolder.get()), lengthHolder.get());
+        }
+
+        /**
+         * Evaluate method to compute the percentile for a given bounded array.
+         * This basically calls the {@link #index(double, int) index function}
+         * and then calls {@link #estimate(double[], int[], double, int)
+         * estimate function} to return the estimated percentile value. Please
+         * note that this method doesnt make use of precached pivots.
+         *
+         * @param work array of numbers to be used for finding the percentile
+         * @param length the number of array elements to include
+         * @param p the pth quantile to be computed
+         * @return estimated percentile
+         * @throws OutOfRangeException if length or p is out of range
+         * @throws NullArgumentException if work array is null
+         */
+        public double evaluate(final double[] work, final int length,
+                final double p) {
+            return this.evaluate(work, null, length, p);
+        }
+
+        /**
+         * A pre-process function to filter out un-needed elements. The sub
+         * classes can do further filtering such as infinities etc if required. <br>
+         * TODO: To abstract this out later if each enum has different need
+         *
+         * @param work the array containing the input numbers
+         * @param lengthHolder a holder of length of work array which gets
+         *            updated.
+         * @return pre processed array and the length parameter updated
+         * @throws OutOfRangeException if lengthHolder is out of range
+         * @throws NullArgumentException if work array or lengthHolder is null
+         */
+        protected double[] preProcess(final double[] work,
+                final AtomicInteger lengthHolder) {
+            MathUtils.checkNotNull(work);
+            MathUtils.checkNotNull(lengthHolder);
+            final int length = lengthHolder.get();
+            if (length < 0 || length > work.length) {
+                throw new OutOfRangeException(length, 0, work.length);
+            }
+            double newWork[] = work;
+            try {
+                MathUtils.checkFinite(work);
+            } catch (NotFiniteNumberException nfe) {
+                // Filter out
+                List<Double> l = new ArrayList<Double>();
+
+                for (int i = 0; i < work.length; i++) {
+                    l.add(work[i]);
+                }
+                for (ListIterator<Double> li = l.listIterator(); li.hasNext();) {
+                    if (exclusions.contains(li.next())) {
+                        li.remove();
+                        lengthHolder.decrementAndGet();
+                    }
+                }
+                newWork = new double[l.size()];
+                for (int i = 0; i < l.size(); i++) {
+                    newWork[i] = l.get(i);
+                }
+            }
+            return newWork;
+        }
+
+        /**
+         * Gets the name of the enum
+         *
+         * @return the name
+         */
+        String getName() {
+            return name;
+        }
+
+        /**
+         * Gets the description of the enum
+         *
+         * @return the description
+         */
+        String getDescription() {
+            return description;
+        }
+    }
+
+    /**
+     * A Simple kth selector implementation to pick up the kth ordered element
+     * from a work array containing the input numbers. This is used in the
+     * context of computing percentile
+     */
+    private static class KthSelector {
+
+        /**
+         * A work array to use to find out the kth value
+         */
+        private final double[] work;
+
+        /**
+         * A pre-cached pivots that can be used for efficient estimation.
+         */
+        private final int[] pivotsHeap;
+
+        /**
+         * A {@link PivotingStrategy} used for pivoting
+         */
+        private final PivotingStrategy pivoting;
+
+        /**
+         * Constructor
+         *
+         * @param values array containing input numbers
+         * @param pivots pivots that are pre-cached used for efficiency
+         */
+        private KthSelector(final double[] values, final int[] pivots) {
+            this(values, pivots, PivotingStrategy.MEDIAN_OF_3);
+        }
+
+        /**
+         * A conveneient wrapper for pivotIndex
+         *
+         * @param begin start index to include
+         * @param end ending index to include
+         * @return pivot
+         */
+        private int pivotIndex(int begin, int end) {
+            return pivoting.pivotIndex(work, begin, end);
+        }
+
+        /**
+         * Constructor with no cached pivots
+         *
+         * @param values array containing input numbers
+         */
+        private KthSelector(final double[] values) {
+            this(values, null);
+        }
+
+        /**
+         * Constructor
+         *
+         * @param values array containing imput numbers
+         * @param pivots pivots that are pre-cached used for efficiency
+         * @param pivotingStrategy one of the PivotingStrategys
+         * @throws NullArgumentException
+         */
+        private KthSelector(final double[] values, final int[] pivots,
+                PivotingStrategy pivotingStrategy) {
+            MathUtils.checkNotNull(values);
+            // MathUtils.checkNotNull(pivots);
+            work = values;
+            pivotsHeap = pivots;
+            pivoting = pivotingStrategy;
+        }
+
+        /**
+         * Select kth value in the array.
+         *
+         * @param k the index whose value in the array is of interest
+         * @return kth value
+         */
+        protected double select(final int k) {
+            int begin = 0;
+            int end = work.length;
+            int node = 0;
+            boolean usePivotsHeap = pivotsHeap != null;
+            while (end - begin > MIN_SELECT_SIZE) {
+                final int pivot;
+
+                if (usePivotsHeap && node < pivotsHeap.length &&
+                        pivotsHeap[node] >= 0) {
+                    // the pivot has already been found in a previous call
+                    // and the array has already been partitioned around it
+                    pivot = pivotsHeap[node];
+                } else {
+                    // select a pivot and partition work array around it
+                    pivot =
+                            partition(begin, end,
+                                    pivoting.pivotIndex(work, begin, end));
+                    if (usePivotsHeap && node < pivotsHeap.length) {
+                        pivotsHeap[node] = pivot;
+                    }
+                }
+
+                if (k == pivot) {
+                    // the pivot was exactly the element we wanted
+                    return work[k];
+                } else if (k < pivot) {
+                    // the element is in the left partition
+                    end = pivot;
+                    node =
+                            FastMath.min(2 * node + 1, usePivotsHeap
+                                    ? pivotsHeap.length : end);
+                } else {
+                    // the element is in the right partition
+                    begin = pivot + 1;
+                    node =
+                            FastMath.min(2 * node + 2, usePivotsHeap
+                                    ? pivotsHeap.length : end);
+                }
+            }
+            Arrays.sort(work, begin, end);
+            return work[k];
+        }
+
+        /**
+         * Partition an array slice around a pivot
+         * <p>
+         * Partitioning exchanges array elements such that all elements smaller
+         * than pivot are before it and all elements larger than pivot are after
+         * it
+         * </p>
+         *
+         * @param begin index of the first element of the slice of work array
+         * @param end index after the last element of the slice of work array
+         * @param pivot initial index of the pivot
+         * @return index of the pivot after partition
+         */
+        private int partition(final int begin, final int end, final int pivot) {
+
+            final double value = work[pivot];
+            work[pivot] = work[begin];
+
+            int i = begin + 1;
+            int j = end - 1;
+            while (i < j) {
+                while (i < j && work[j] > value) {
+                    --j;
+                }
+                while (i < j && work[i] < value) {
+                    ++i;
+                }
+
+                if (i < j) {
+                    final double tmp = work[i];
+                    work[i++] = work[j];
+                    work[j--] = tmp;
+                }
+            }
+
+            if (i >= end || work[i] > value) {
+                --i;
+            }
+            work[begin] = work[i];
+            work[i] = value;
+            return i;
+        }
+    }
+
+    /**
+     * A strategy to choose pivoting index of an array for partitioning and
+     * sorting. This is used for Kth selection/quick sorting. The strategy
+     * allows a choice of techniques such as Median of 3, Random Pivot,
+     * Central/End pivot ec.
+     */
+    private static enum PivotingStrategy {
+        MEDIAN_OF_3() {
+            /**
+             * {@inheritDoc}.This in specific makes use of median of 3.
+             * @param work data array
+             * @param begin index of the first element of the slice
+             * @param end index after the last element of the slice
+             * @return the index of the pivot element chosen between the
+             * first, middle and the last element of the array slice
+             * throws {@link OutOfRangeException} whenever indices exceeds range
+             */
+            @Override
+            public int pivotIndex(final double[] work, final int begin,
+                    final int end) {
+                MathUtils.checkNotNull(work);
+                if (begin < 0 || begin >= work.length) {
+                    throw new OutOfRangeException(begin, 0, work.length);
+                }
+                if (end < begin || end > work.length) {
+                    throw new OutOfRangeException(end, begin, work.length);
+                }
+                final int inclusiveEnd = end - 1;
+                final int middle = begin + (inclusiveEnd - begin) / 2;
+                final double wBegin = work[begin];
+                final double wMiddle = work[middle];
+                final double wEnd = work[inclusiveEnd];
+
+                if (wBegin < wMiddle) {
+                    if (wMiddle < wEnd) {
+                        return middle;
+                    } else {
+                        return wBegin < wEnd ? inclusiveEnd : begin;
+                    }
+                } else {
+                    if (wBegin < wEnd) {
+                        return begin;
+                    } else {
+                        return wMiddle < wEnd ? inclusiveEnd : middle;
+                    }
+                }
+            }
+        },
+
+        // RANDOM_PIVOT(){}
+        ;
+
+        /**
+         * Find pivot index of the array so that partition and kth selection can
+         * be made
+         * @param work data array
+         * @param begin index of the first element of the slice
+         * @param end index after the last element of the slice
+         * @return the index of the pivot element chosen between the
+         * first and the last element of the array slice
+         * @throws OutOfRangeException
+         */
+        protected abstract int pivotIndex(final double[] work, final int begin,
+                final int end);
+    }
 }
