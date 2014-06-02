@@ -832,21 +832,24 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             try {
                 MathUtils.checkFinite(work);
             } catch (NotFiniteNumberException nfe) {
-                // Filter out
-                List<Double> l = new ArrayList<Double>();
+                // Filter out if exclusion is not empty
+                if(!exclusions.isEmpty()) {
+                    List<Double> l = new ArrayList<Double>();
 
-                for (int i = 0; i < work.length; i++) {
-                    l.add(work[i]);
-                }
-                for (ListIterator<Double> li = l.listIterator(); li.hasNext();) {
-                    if (exclusions.contains(li.next())) {
-                        li.remove();
-                        lengthHolder.decrementAndGet();
+                    for (int i = 0; i < work.length; i++) {
+                        l.add(work[i]);
                     }
-                }
-                newWork = new double[l.size()];
-                for (int i = 0; i < l.size(); i++) {
-                    newWork[i] = l.get(i);
+                    for (ListIterator<Double> li = l.listIterator();
+                            li.hasNext();) {
+                        if (exclusions.contains(li.next())) {
+                            li.remove();
+                            lengthHolder.decrementAndGet();
+                        }
+                    }
+                    newWork = new double[l.size()];
+                    for (int i = 0; i < l.size(); i++) {
+                        newWork[i] = l.get(i);
+                    }
                 }
             }
             return newWork;
