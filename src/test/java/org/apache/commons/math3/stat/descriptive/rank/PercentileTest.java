@@ -610,5 +610,4 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                     " but was = " + result, expected, result, tolerance);
         }
     }
-
 }
