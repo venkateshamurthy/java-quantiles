@@ -516,10 +516,21 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         } catch (OutOfRangeException oore) {
             // expected
         }
+        //Check if null estimation technique can be injected
+        try {
+            Assert.assertNull(new Percentile(
+                    (EstimationTechnique)null).getEstimationTechnique());
+            Assert.fail("Unexpected: Percentile cannot have a NULL " +
+                    "Estimation technique");
+        }catch(NullArgumentException nae) {
+            //expected as we cannot afford to have a null for estimation
+        }
     }
 
     @Test
     public void testAllEstimationTechniquesOnly() {
+        Assert.assertEquals("DEFAULT",DEFAULT.getName());
+        Assert.assertEquals("Apache Commons",DEFAULT.getDescription());
         Object[][] map =
                 new Object[][] { { DEFAULT, 20.82 }, { R1, 19.8 },
                         { R2, 19.8 }, { R3, 19.8 }, { R4, 19.310 },
@@ -536,7 +547,23 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
     }
 
     @Test
+    public void testAllEstimationTechniquesOnlyForExtremeIndexes() {
+        final double MAX=100;
+        Object[][] map =
+                new Object[][] { { DEFAULT, 0d, MAX}, { R1, 0d,MAX+0.5 },
+                { R2, 0d,MAX}, { R3, 0d,MAX }, { R4, 0d,MAX },
+                { R7, 0d,MAX }, { R8, 0d,MAX }  };
+        for (Object[] o : map) {
+            EstimationTechnique e = (EstimationTechnique) o[0];
+                Assert.assertEquals(((Double)o[1]).doubleValue(),
+                        e.index(0d, (int)MAX),0d);
+                Assert.assertEquals("Enum:"+e,((Double)o[2]).doubleValue(),
+                        e.index(1.0, (int)MAX),0d);
+            }
+    }
+    @Test
     public void testAllEstimationTechniquesOnlyForNullsAndOOR() {
+
         Object[][] map =
                 new Object[][] { { DEFAULT, 20.82 }, { R1, 19.8 },
                         { R2, 19.8 }, { R3, 19.8 }, { R4, 19.310 },
@@ -544,6 +571,7 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         for (Object[] o : map) {
             EstimationTechnique e = (EstimationTechnique) o[0];
             try {
+
                 e.evaluate(null, testArray.length, DEFAULT_PERCENTILE );
                 Assert.fail("Expecting NullArgumentException");
             } catch (NullArgumentException nae) {
