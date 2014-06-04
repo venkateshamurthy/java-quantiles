@@ -68,4 +68,4 @@ public class Median extends Percentile implements Serializable {
             throws MathIllegalArgumentException {
         super(50.0, technique);
     }
-} Me
+}
