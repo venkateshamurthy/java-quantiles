@@ -23,12 +23,16 @@ import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Estimati
 import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R7;
 import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R8;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
+import org.apache.commons.math3.exception.MathUnsupportedOperationException;
 import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatisticAbstractTest;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique;
+import org.apache.commons.math3.stat.descriptive.rank.Percentile.PivotingStrategy;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -205,6 +209,7 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
      */
     @Before
     public void before() {
+        Percentile.setPivotingStrategy(PivotingStrategy.MEDIAN_OF_3);
         estimationTechnique = DEFAULT;
     }
 
@@ -238,6 +243,92 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
 
     @Test
     public void testAllTechniquesPercentile() {
+        double[] d = new double[] { 1, 3, 2, 4 };
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 1.5d },
+                { R1, 2d }, { R2, 2d }, { R3, 1d }, { R4, 1.2d }, { R7, 1.9 },
+                { R8, 1.63333 } }, 30d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 1.25d },
+                { R1, 1d }, { R2, 1.5d }, { R3, 1d }, { R4, 1d }, { R7, 1.75 },
+                { R8, 1.41667 }, }, 25d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 3.75d },
+                { R1, 3d }, { R2, 3.5d }, { R3, 3d }, { R4, 3d }, { R7, 3.25 },
+                { R8, 3.58333 }, }, 75d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 2.5d },
+                { R1, 2d }, { R2, 2.5d }, { R3, 2d }, { R4, 2d }, { R7, 2.5 },
+                { R8, 2.5 }, }, 50d, 1.0e-05);
+
+        // invalid percentiles
+        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+            try {
+                new Percentile(-1.0, e).evaluate(d, 0, d.length, -1.0);
+                Assert.fail();
+            } catch (MathIllegalArgumentException ex) {
+                // success
+            }
+        }
+
+        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+            try {
+                new Percentile(101.0, e).evaluate(d, 0, d.length, 101.0);
+                Assert.fail();
+            } catch (MathIllegalArgumentException ex) {
+                // success
+            }
+        }
+    }
+
+    @Test
+    public void testAllTechniquesPercentileUsingCentralPivoting() {
+        Percentile.setPivotingStrategy(PivotingStrategy.CENTRAL);
+        Assert.assertTrue(PivotingStrategy.CENTRAL
+                .equals(Percentile.getPivotingStrategy()));
+        double[] d = new double[] { 1, 3, 2, 4 };
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 1.5d },
+                { R1, 2d }, { R2, 2d }, { R3, 1d }, { R4, 1.2d }, { R7, 1.9 },
+                { R8, 1.63333 } }, 30d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 1.25d },
+                { R1, 1d }, { R2, 1.5d }, { R3, 1d }, { R4, 1d }, { R7, 1.75 },
+                { R8, 1.41667 }, }, 25d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 3.75d },
+                { R1, 3d }, { R2, 3.5d }, { R3, 3d }, { R4, 3d }, { R7, 3.25 },
+                { R8, 3.58333 }, }, 75d, 1.0e-05);
+
+        testAssertMappedValues(d, new Object[][] { { DEFAULT, 2.5d },
+                { R1, 2d }, { R2, 2.5d }, { R3, 2d }, { R4, 2d }, { R7, 2.5 },
+                { R8, 2.5 }, }, 50d, 1.0e-05);
+
+        // invalid percentiles
+        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+            try {
+                new Percentile(-1.0, e).evaluate(d, 0, d.length, -1.0);
+                Assert.fail();
+            } catch (MathIllegalArgumentException ex) {
+                // success
+            }
+        }
+
+        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+            try {
+                new Percentile(101.0, e).evaluate(d, 0, d.length, 101.0);
+                Assert.fail();
+            } catch (MathIllegalArgumentException ex) {
+                // success
+            }
+        }
+    }
+
+    @Test
+    public void testAllTechniquesPercentileUsingRandomPivoting() {
+        Percentile.setPivotingStrategy(PivotingStrategy.RANDOM);
+        Assert.assertTrue(PivotingStrategy.RANDOM
+                .equals(Percentile.getPivotingStrategy()));
         double[] d = new double[] { 1, 3, 2, 4 };
 
         testAssertMappedValues(d, new Object[][] { { DEFAULT, 1.5d },
@@ -341,6 +432,28 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
     }
 
     @Test
+    public void testAllTechniquesEmpty() {
+        double[] singletonArray = new double[] { };
+        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+            UnivariateStatistic percentile = getUnivariateStatistic(50, e);
+            Assert.assertEquals(Double.NaN, percentile.evaluate(singletonArray), 0);
+            Assert.assertEquals(Double.NaN, percentile.evaluate(singletonArray, 0, 0),
+                    0);
+            Assert.assertEquals(Double.NaN,
+                    new Percentile().evaluate(singletonArray, 0, 0, 5), 0);
+            Assert.assertEquals(Double.NaN,
+                    new Percentile().evaluate(singletonArray, 0, 0, 100), 0);
+            Assert.assertTrue(Double.isNaN(percentile.evaluate(singletonArray,
+                    0, 0)));
+        }
+    }
+
+    @Test(expected=NullArgumentException.class)
+    public void testSetNullPivotingStrategy() {
+        Percentile.setPivotingStrategy(null);
+    }
+
+    @Test
     public void testAllTechniquesSpecialValues() {
         UnivariateStatistic percentile = getUnivariateStatistic(50d, DEFAULT);
         double[] specialValues =
@@ -376,7 +489,8 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
 
         specialValues = new double[] { 1d, 1d, Double.NaN, Double.NaN };
         Assert.assertTrue(Double.isNaN(percentile.evaluate(specialValues)));
-
+        Assert.assertTrue(specialValues==DEFAULT.preProcess(specialValues,
+                new AtomicInteger(specialValues.length)));
         testAssertMappedValues(specialValues, new Object[][] {
                 { DEFAULT, Double.NaN }, { R1, 1.0 }, { R2, 1.0 }, { R3, 1.0 },
                 { R4, 1.0 }, { R7, 1.0 }, { R8, 1.0 }, }, 50d, 0d);
@@ -409,6 +523,23 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                 Assert.fail("Expecting MathIllegalArgumentException");
             } catch (MathIllegalArgumentException ex) {
                 // expected
+            }
+
+
+            try {
+                e.preProcess(testArray, null);
+            }catch(MathIllegalArgumentException ex) {
+                //expected
+            }
+            try {
+                e.preProcess(testArray, new AtomicInteger(-1));
+            }catch(MathIllegalArgumentException ex) {
+                //expected
+            }
+            try {
+                e.preProcess(null, new AtomicInteger(10));
+            }catch(MathIllegalArgumentException ex) {
+                //expected
             }
         }
     }
@@ -472,7 +603,7 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
     }
 
     @SuppressWarnings("deprecation")
-    @Test
+    @Test(expected=MathUnsupportedOperationException.class)
     public void testMedianOf3() {
         Percentile p = new Percentile(R7);
         Assert.assertEquals(0, p.medianOf3(testArray, 0, testArray.length));
@@ -480,61 +611,38 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                 p.medianOf3(testWeightsArray, 0, testWeightsArray.length));
     }
 
-    @SuppressWarnings("deprecation")
-    @Test
-    public void testMedianOf3WithOutOfRangeIndexes() {
-        Percentile p = new Percentile(R7);
-        Assert.assertEquals(0, p.medianOf3(testArray, 0, testArray.length));
-        try {
-            Assert.assertEquals(10,
-                    p.medianOf3(testWeightsArray, -1, testWeightsArray.length));
-            Assert.fail("Unexpected : Out of range begin index(-1) "
-                    + "should not be accepted");
-        } catch (OutOfRangeException oore) {
-            // expected
-        }
-        try {
-            Assert.assertEquals(10, p.medianOf3(testWeightsArray,
-                    testWeightsArray.length + 10, testWeightsArray.length));
-            Assert.fail("Unexpected : Out of range begin index(ArrayLength+10)"
-                    + " should not be accepted");
-        } catch (OutOfRangeException oore) {
-            // expected
-        }
-        try {
-            Assert.assertEquals(10, p.medianOf3(testWeightsArray, 0, -1));
-            Assert.fail("Unexpected : Out of range end index(<begin) "
-                    + "should not be accepted");
-        } catch (OutOfRangeException oore) {
-            // expected
-        }
-        try {
-            Assert.assertEquals(10, p.medianOf3(testWeightsArray, 0,
-                    testWeightsArray.length + 10));
-            Assert.fail("Unexpected : Out of range end index(ArrayLength+10)"
-                    + " should not be accepted");
-        } catch (OutOfRangeException oore) {
-            // expected
-        }
+    @Test(expected=NullArgumentException.class)
+    public void testNullEstimation() {
         //Check if null estimation technique can be injected
-        try {
-            Assert.assertNull(new Percentile(
-                    (EstimationTechnique)null).getEstimationTechnique());
-            Assert.fail("Unexpected: Percentile cannot have a NULL " +
-                    "Estimation technique");
-        }catch(NullArgumentException nae) {
-            //expected as we cannot afford to have a null for estimation
-        }
+        Assert.assertNull(new Percentile(
+                (EstimationTechnique)null).getEstimationTechnique());
+        Assert.fail("Unexpected: Percentile cannot have a NULL " +
+                "Estimation technique");
     }
 
     @Test
     public void testAllEstimationTechniquesOnly() {
         Assert.assertEquals("DEFAULT",DEFAULT.getName());
-        Assert.assertEquals("Apache Commons",DEFAULT.getDescription());
         Object[][] map =
                 new Object[][] { { DEFAULT, 20.82 }, { R1, 19.8 },
                         { R2, 19.8 }, { R3, 19.8 }, { R4, 19.310 },
                         { R7, 19.555 }, { R8, 20.460 } };
+        try {
+            DEFAULT.evaluate(testArray, testArray.length,
+                    -1d );
+        }catch(OutOfRangeException oore) {}
+        try {
+            DEFAULT.evaluate(testArray, testArray.length,
+                    101d );
+        }catch(OutOfRangeException oore) {}
+        try {
+            DEFAULT.evaluate(testArray, -1,
+                    50d );
+        }catch(OutOfRangeException oore) {}
+        try {
+            DEFAULT.evaluate(testArray, testArray.length+1,
+                    50d );
+        }catch(OutOfRangeException oore) {}
         for (Object[] o : map) {
             EstimationTechnique e = (EstimationTechnique) o[0];
             double expected = (Double) o[1];
@@ -545,6 +653,28 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                     " but was = " + result, expected, result, tolerance);
         }
     }
+    @Test
+    public void testAllEstimationTechniquesOnlyForAllPivotingStrategies() {
+
+        Assert.assertEquals("DEFAULT",DEFAULT.getName());
+        Object[][] map =
+                new Object[][] { { DEFAULT, 20.82 }, { R1, 19.8 },
+                        { R2, 19.8 }, { R3, 19.8 }, { R4, 19.310 },
+                        { R7, 19.555 }, { R8, 20.460 } };
+        for(PivotingStrategy strategy:PivotingStrategy.values()) {
+            Percentile.setPivotingStrategy(strategy);
+            for (Object[] o : map) {
+                EstimationTechnique e = (EstimationTechnique) o[0];
+                double expected = (Double) o[1];
+                double result =
+                        e.evaluate(testArray, testArray.length,
+                                DEFAULT_PERCENTILE );
+                Assert.assertEquals("expected[" + e + "] = " + expected +
+                        " but was = " + result, expected, result, tolerance);
+            }
+        }
+    }
+
 
     @Test
     public void testAllEstimationTechniquesOnlyForExtremeIndexes() {
@@ -610,4 +740,5 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                     " but was = " + result, expected, result, tolerance);
         }
     }
+
 }
