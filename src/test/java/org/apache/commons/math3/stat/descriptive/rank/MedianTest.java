@@ -16,17 +16,20 @@
  */
 package org.apache.commons.math3.stat.descriptive.rank;
 
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.DEFAULT;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R1;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R2;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R3;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R4;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R7;
-import static org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique.R8;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.CM;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_1;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_2;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_3;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_4;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_5;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_6;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_7;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_8;
+import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_9;
 
 import org.apache.commons.math3.stat.descriptive.UnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatisticAbstractTest;
-import org.apache.commons.math3.stat.descriptive.rank.Percentile.EstimationTechnique;
+import org.apache.commons.math3.stat.descriptive.rank.Percentile.Type;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -40,16 +43,17 @@ public class MedianTest extends UnivariateStatisticAbstractTest{
     protected Median stat;
 
     /**
-     * estimationTechnique to be used while calling
+     * {@link  org.apache.commons.math3.stat.descriptive.rank.Percentile.Type type}
+     *  to be used while calling
      * {@link #getUnivariateStatistic()}
      */
-    protected EstimationTechnique estimationTechnique = DEFAULT;
+    protected Type estimationType = CM;
 
     /**
-     * {@link EstimationTechnique}s that this test will verify against
+     * {@link Type}s that this test will verify against
      */
-    protected final EstimationTechnique[] ESTIMATION_TECHNIQUES =
-            new EstimationTechnique[] { DEFAULT, R1, R2, R3, R4, R7, R8 };
+    protected final Type[] TYPES =
+            new Type[] { CM, R_1, R_2, R_3, R_4, R_5, R_6, R_7, R_8,R_9 };
 
 
     /**
@@ -70,17 +74,17 @@ public class MedianTest extends UnivariateStatisticAbstractTest{
 
     @Before
     public void before() {
-        estimationTechnique=DEFAULT;
+        estimationType=CM;
     }
 
-    public UnivariateStatistic getUnivariateStatistic(EstimationTechnique e) {
+    public UnivariateStatistic getUnivariateStatistic(Type e) {
         return new Median(e);
     }
 
     @Test
     public void testAllTechniquesSingleton() {
         double[] singletonArray = new double[] { 1d };
-        for (EstimationTechnique e : ESTIMATION_TECHNIQUES) {
+        for (Type e : TYPES) {
             UnivariateStatistic percentile = getUnivariateStatistic(e);
             Assert.assertEquals(1d, percentile.evaluate(singletonArray), 0);
             Assert.assertEquals(1d, percentile.evaluate(singletonArray, 0, 1),
@@ -96,9 +100,9 @@ public class MedianTest extends UnivariateStatisticAbstractTest{
     @Test
     public void testAllTechniquesMedian() {
         double[] d = new double[] { 1, 3, 2, 4 };
-        testAssertMappedValues(d, new Object[][] { { DEFAULT, 2.5d },
-            { R1, 2d }, { R2, 2.5d }, { R3, 2d }, { R4, 2d }, { R7, 2.5 },
-            { R8, 2.5 }, },  1.0e-05);
+        testAssertMappedValues(d, new Object[][] { { CM, 2.5d },
+            { R_1, 2d }, { R_2, 2.5d }, { R_3, 2d }, { R_4, 2d }, { R_5, 2.5 },
+            { R_6, 2.5 },{ R_7, 2.5 },{ R_8, 2.5 }, { R_9 , 2.5 } },  1.0e-05);
 
     }
 
@@ -107,13 +111,13 @@ public class MedianTest extends UnivariateStatisticAbstractTest{
      * Simple test assertion utility method
      *
      * @param d input data
-     * @param map of expected result against a {@link EstimationTechnique}
+     * @param map of expected result against a {@link Type}
      * @param tolerance the tolerance of difference allowed
      */
     protected void testAssertMappedValues(double[] d, Object[][] map,
             Double tolerance) {
         for (Object[] o : map) {
-            EstimationTechnique e = (EstimationTechnique) o[0];
+            Type e = (Type) o[0];
             double expected = (Double) o[1];
             double result = this.getUnivariateStatistic(e).evaluate(d);
             Assert.assertEquals("expected[" + e + "] = " + expected +
