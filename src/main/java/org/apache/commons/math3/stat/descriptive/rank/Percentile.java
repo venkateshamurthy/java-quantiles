@@ -88,9 +88,7 @@ import org.apache.commons.math3.util.ResizableDoubleArray;
  * multiple threads access an instance of this class concurrently, and at least
  * one of the threads invokes the <code>increment()</code> or
  * <code>clear()</code> method, it must be synchronized externally.</p>
- * <p>
- * The percentile instance can now be set to use specific technique to estimate
- * the percentile by passing a {@link EstimationTechnique} in constructor.</p>
+ *
  * @version $Id: Percentile.java 1416643 2012-12-03 19:37:14Z tn $
  */
 public class Percentile extends AbstractUnivariateStatistic implements Serializable {
@@ -107,8 +105,8 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     /** Default pivoting strategy used while doing K<sup>th</sup> selection */
     private static PivotingStrategy pivotingStrategy = MEDIAN_OF_3;
 
-    /** Any of the {@link EstimationTechnique}s such as DEFAULT can be used. */
-    private final EstimationTechnique estimationTechnique;
+    /** Any of the {@link Type}s such as DEFAULT can be used. */
+    private final Type estimationType;
 
     /** Determines what percentile is computed when evaluate() is activated
      * with no quantile argument */
@@ -133,7 +131,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * than or equal to 100
      */
     public Percentile(final double p) throws MathIllegalArgumentException {
-        this(p, EstimationTechnique.DEFAULT);//uses DEFAULT Estimation
+        this(p, Type.CM);//uses DEFAULT Estimation
     }
 
     /**
@@ -144,41 +142,40 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * @throws NullArgumentException if original is null
      */
     public Percentile(Percentile original) throws NullArgumentException {
-        estimationTechnique = original.getEstimationTechnique();
+        estimationType = original.getEstimationType();
         copy(original, this);
     }
 
     /**
      * Constructs a percentile with the specific quantile value and an
-     * {@link EstimationTechnique}.
+     * {@link Type}.
      *
      * @param p the quantile to be computed
-     * @param technique one of the percentile {@link EstimationTechnique
-     *            estimation techniques}
+     * @param type one of the percentile {@link Type
+     *            estimation types}
      * @throws MathIllegalArgumentException if p is not greater than 0 and less
      *             than or equal to 100
-     * @throws NullArgumentException if technique passed in null
+     * @throws NullArgumentException if type passed in null
      */
-    public Percentile(final double p, EstimationTechnique technique)
+    public Percentile(final double p, Type type)
             throws MathIllegalArgumentException {
         setQuantile(p);
         cachedPivots = null;
-        MathUtils.checkNotNull(technique);
-        estimationTechnique = technique;
+        MathUtils.checkNotNull(type);
+        estimationType = type;
     }
 
     /**
      * Constructs a default percentile with a specific
-     * {@link EstimationTechnique}.
+     * {@link Type}.
      *
-     * @param technique one of the percentile {@link EstimationTechnique
-     *            estimation techniques}
-     * @throws MathIllegalArgumentException if p is not greater than 0 and less
-     *             than or equal to 100
+     * @param type one of the percentile {@link Type
+     *            estimation types}
+     * @throws NullArgumentException if type is null
      */
-    public Percentile(EstimationTechnique technique)
-            throws MathIllegalArgumentException {
-        this(50, technique);
+    public Percentile(Type type)
+            throws NullArgumentException {
+        this(50, type);
     }
 
 
@@ -329,11 +326,11 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         }
         final double[] work = getWorkArray(values, begin, length);
         final int[] pivotsHeap = getPivots(values);
-        return estimationTechnique.evaluate(work, pivotsHeap, length, p);
+        return estimationType.evaluate(work, pivotsHeap, length, p);
     }
 
 
-    /** Select a pivot index as the median of three.
+    /** Select a pivot index as the median of three
      * <p>
      * <b>Note:</b> With the effect of allowing a strategy for
      * {@link PivotingStrategy pivoting} to be set on {@link Percentile} class;
@@ -350,7 +347,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      */
     @Deprecated
     int medianOf3(final double[] work, final int begin, final int end) {
-        //return new KthSelector(work).pivotIndex(begin, end);
         throw new MathUnsupportedOperationException();
     }
 
@@ -449,19 +445,19 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     }
 
     /**
-     * Get the estimation technique set
+     * Get the estimation type set
      *
-     * @return the estimationTechnique
+     * @return the estimation type
      */
-    public EstimationTechnique getEstimationTechnique() {
-        return estimationTechnique;
+    public Type getEstimationType() {
+        return estimationType;
     }
 
     /**
-     * Get the pivoting strategy used
+     * Get the {@link PivotingStrategy pivoting strategy} used
      * @return the pivotingStrategy set
      */
-    static PivotingStrategy getPivotingStrategy() {
+    public static PivotingStrategy getPivotingStrategy() {
         return pivotingStrategy;
     }
 
@@ -472,10 +468,11 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * <li>{@link PivotingStrategy#CENTRAL CENTRAL}</li>
      * <li>{@link PivotingStrategy#RANDOM RANDOM}</li>
      * <ul>
-     * @param pivotingStrategy the pivotingStrategy to set
+     * @param pivotingStrategy One of {@link PivotingStrategy} to be used
      * @throws NullArgumentException when pivotingStrategy is null
      */
-    static void setPivotingStrategy(final PivotingStrategy pivotingStrategy) {
+    public static void setPivotingStrategy(
+            final PivotingStrategy pivotingStrategy) {
         MathUtils.checkNotNull(pivotingStrategy);
         Percentile.pivotingStrategy = pivotingStrategy;
     }
@@ -483,26 +480,52 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     /**
      * An enum for various estimation strategies of a percentile referred in
      * <a href="http://en.wikipedia.org/wiki/Quantile">wikipedia on quantile</a>
-     * with the names of enum matching those of techniques mentioned in
+     * with the names of enum matching those of types mentioned in
      * wikipedia.
      * <p>
      * Each enum corresponding to the specific type of estimation in wikipedia
      * implements  the respective formulae that specializes in the below aspects
      * <ul>
-     * <li>A method to calculate rough approximate index of the estimate
-     * <li>A method to estimate values found at the earlier computed index
+     * <li>An <b>index method</b> to calculate approximate index of the
+     * estimate</li>
+     * <li>An <b>estimate method</b> to estimate a value found at the earlier
+     * computed index</li>
+     * <li>A <b> minLimit</b> on the quantile for which first element of sorted
+     * input is returned as an estimate </li>
+     * <li>A <b> maxLimit</b> on the quantile for which last element of sorted
+     * input is returned as an estimate </li>
      * </ul>
      * <p>
      * Users can now create {@link Percentile} by explicitly passing this enum;
-     * such as {@link Percentile#Percentile(EstimationTechnique)}
+     * such as by invoking {@link Percentile#Percentile(Type)}
+     * <p>
+     * References:
+     * <ol>
+     * <li>
+     * <a href="http://en.wikipedia.org/wiki/Quantile">Wikipedia on quantile</a>
+     * </li>
+     * <li>
+     * <a href="https://www.amherst.edu/media/view/129116/.../Sample+Quantiles.pdf">
+     * Hyndman, R. J. and Fan, Y. (1996) Sample quantiles in statistical
+     * packages, American Statistician 50, 361–365</a> </li>
+     * <li>
+     * <a href="http://stat.ethz.ch/R-manual/R-devel/library/stats/html/quantile.html">
+     * R-Manual </a></li>
+     * </ol>
      *
      */
-    public static enum EstimationTechnique {
+    public static enum Type {
         /**
-         * This is the default technique used in the {@link Percentile Apache
-         * Commons Math Percentile}
+         * This is the default type used in the {@link Percentile}.This method
+         * has the following formulae for index and estimates<br>
+         * \( \begin{align}
+         * &amp;index    = (N+1)p\ \\
+         * &amp;estimate = x_{\lceil h\,-\,1/2 \rceil} \\
+         * &amp;minLimit = 0 \\
+         * &amp;maxLimit = 1 \\
+         * \end{align}\)
          */
-        DEFAULT("DEFAULT") {
+        CM("Commons Math") {
             {
                 {
                     exclusions.clear();
@@ -514,12 +537,15 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
              */
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 0d) == 0 ? 0 :
-                       Double.compare(p, 1d) == 0 ? length : p * (length + 1);
+                final double minLimit = 0d;
+                final double maxLimit = 1d;
+                return Double.compare(p, minLimit) == 0 ? 0 :
+                       Double.compare(p, maxLimit) == 0 ?
+                               length : p * (length + 1);
             }
 
             /**
-             * {@inheritDoc}. The DEFAULT technique does'nt need filtering and
+             * {@inheritDoc}. This type does'nt need filtering and
              * hence dummied out
              */
             @Override
@@ -530,14 +556,18 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
         /**
          * The method R1 has the following formulae for index and estimates<br>
-         * \(index(h)= Np + 1/2\, \) and
-         * \(estimate(Qp)= x_{\lceil h\,-\,1/2 \rceil} \).
+         * \( \begin{align}
+         * &amp;index= Np + 1/2\,  \\
+         * &amp;estimate= x_{\lceil h\,-\,1/2 \rceil} \\
+         * &amp;minLimit = 0 \\
+         * \end{align}\)
          */
-        R1("R-1") {
+        R_1("R-1") {
 
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 0d) == 0 ? 0 : length * p + 0.5;
+                final double minLimit = 0d;
+                return Double.compare(p, minLimit) == 0 ? 0 : length * p + 0.5;
             }
 
             /**
@@ -554,16 +584,22 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
         /**
          * The method R2 has the following formulae for index and estimates<br>
-         * \(index(h)= Np + 1/2\, \) and
-         * \(estimate(Qp)=\frac{x_{\lceil h\,-\,1/2 \rceil} +
-         * x_{\lfloor h\,+\,1/2 \rfloor}}{2} \)
+         * \( \begin{align}
+         * &amp;index= Np + 1/2\, \\
+         * &amp;estimate=\frac{x_{\lceil h\,-\,1/2 \rceil} +
+         * x_{\lfloor h\,+\,1/2 \rfloor}}{2} \\
+         * &amp;minLimit = 0 \\
+         * &amp;maxLimit = 1 \\
+         * \end{align}\)
          */
-        R2("R-2") {
+        R_2("R-2") {
 
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 1d) == 0 ? length :
-                       Double.compare(p, 0d) == 0 ? 0 : length * p + 0.5;
+                final double minLimit = 0d;
+                final double maxLimit = 1d;
+                return Double.compare(p, maxLimit) == 0 ? length :
+                       Double.compare(p, minLimit) == 0 ? 0 : length * p + 0.5;
             }
 
             /**
@@ -586,46 +622,112 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
         /**
          * The method R3 has the following formulae for index and estimates<br>
-         * \(index(h)= Np\, \) and
-         * \(estimate(Qp)= x_{\lfloor h \rceil}\, \)
+         * \( \begin{align}
+         * &amp;index= Np \\
+         * &amp;estimate= x_{\lfloor h \rceil}\, \\
+         * &amp;minLimit = 0.5/N \\
+         * \end{align}\)
          */
-        R3("R-3") {
+        R_3("R-3") {
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 0.5 / length) <= 0 ?
+                final double minLimit = 1d/2 / length;
+                return Double.compare(p, minLimit) <= 0 ?
                         0 : Math.rint(length * p);
             }
 
         },
         /**
          * The method R4 has the following formulae for index and estimates<br>
-         * \(index(h)= Np + 1/2\, \) and
-         * \(estimate(Qp)= x_{\lfloor h \rfloor} + (h -
+         * \( \begin{align}
+         * &amp;index= Np\, \\
+         * &amp;estimate= x_{\lfloor h \rfloor} + (h -
          * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
-         * \rfloor}) \)
+         * \rfloor}) \\
+         * &amp;minLimit = 1/N \\
+         * &amp;maxLimit = 1 \\
+         * \end{align}\)
          */
-        R4("R-4") {
+        R_4("R-4") {
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 1d / length) < 0 ? 0 :
-                       Double.compare(p, 1) == 0 ? length : length * p;
+                final double minLimit = 1d / length;
+                final double maxLimit = 1d;
+                return Double.compare(p, minLimit) < 0 ? 0 :
+                       Double.compare(p, maxLimit) == 0 ? length : length * p;
             }
 
+        },
+        /**
+         * The method R5 has the following formulae for index and estimates<br>
+         * \( \begin{align}
+         * &amp;index= Np + 1/2\\
+         * &amp;estimate= x_{\lfloor h \rfloor} + (h -
+         * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \\
+         * &amp;minLimit = 0.5/N \\
+         * &amp;maxLimit = (N-0.5)/N
+         * \end{align}\)
+         */
+        R_5("R-5"){
+
+            @Override
+            protected double index(double p, int length) {
+                final double minLimit = 1d/2 / length;
+                final double maxLimit = (length - 0.5) / length;
+                return Double.compare(p, minLimit) < 0 ? 0 :
+                       Double.compare(p, maxLimit) >= 0 ?
+                               length : length * p + 0.5;
+            }
+        },
+        /**
+         * The method R6 has the following formulae for index and estimates<br>
+         * \( \begin{align}
+         * &amp;index= (N + 1)p \\
+         * &amp;estimate= x_{\lfloor h \rfloor} + (h -
+         * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \\
+         * &amp;minLimit = 1/(N+1) \\
+         * &amp;maxLimit = N/(N+1) \\
+         * \end{align}\)
+         * <p>
+         * <b>Note:</b> This method computes the index in a manner very close to
+         * the default Commons Math Percentile existing implementation. However
+         * the difference to be noted is in picking up the limits with which
+         * first element (p&lt;1(N+1)) and last elements (p&gt;N/(N+1))are done.
+         * While in default case; these are done with p=0 and p=1 respectively.
+         */
+        R_6("R-6"){
+
+            @Override
+            protected double index(double p, int length) {
+                final double minLimit = 1d / (length + 1);
+                final double maxLimit = 1d * length / (length + 1);
+                return Double.compare(p, minLimit) < 0 ? 0 :
+                       Double.compare(p, maxLimit) >= 0 ?
+                               length : (length + 1) * p;
+            }
         },
 
         /**
          * The method R7 implements Microsoft Excel style computation has the
          * following formulae for index and estimates.<br>
-         * \(index(h)= (N-1)p + 1\, \) and
-         * \(estimate(Qp)= x_{\lfloor h \rfloor} + (h -
+         * \( \begin{align}
+         * &amp;index = (N-1)p + 1 \\
+         * &amp;estimate = x_{\lfloor h \rfloor} + (h -
          * \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
-         * \rfloor}) \)
+         * \rfloor}) \\
+         * &amp;minLimit = 0 \\
+         * &amp;maxLimit = 1 \\
+         * \end{align}\)
          */
-        R7("R-7") {
+        R_7("R-7") {
             @Override
             protected double index(final double p, final int length) {
-                return Double.compare(p, 0d) == 0 ? 0 :
-                       Double.compare(p, 1d) == 0 ?
+                final double minLimit = 0d;
+                final double maxLimit = 1d;
+                return Double.compare(p, minLimit) == 0 ? 0 :
+                       Double.compare(p, maxLimit) == 0 ?
                                length : 1 + (length - 1) * p;
             }
 
@@ -633,26 +735,53 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         /**
          * The method R8 has the following formulae for index and estimates<br>
-         * \(index(h) = (N + 1/3)p + 1/3\,  \) and
-         * \(estimate(Qp) = x_{\lfloor h \rfloor} + (h -
+         * \( \begin{align}
+         * &amp;index = (N + 1/3)p + 1/3  \\
+         * &amp;estimate = x_{\lfloor h \rfloor} + (h -
            \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
-         * \rfloor}) \)
+         * \rfloor}) \\
+         * &amp;minLimit = (2/3)/(N+1/3) \\
+         * &amp;maxLimit = (N-1/3)/(N+1/3) \\
+         * \end{align}\)
          * <p>
-         * Most recommended approach as per wikipedia as it provides an unbiased
-         * estimate which is distribution free.
+         * As per Ref [2,3] this approach is most recommended as it provides
+         * an approximate median-unbiased estimate regardless of distribution.
          */
-        R8("R-8") {
+        R_8("R-8") {
             @Override
             protected double index(final double p, final int length) {
-                double oneThird = 1d / 3;
-                double nPlus = length + oneThird;
-                double nMinus = length - oneThird;
-                return Double.compare(p, 2 * oneThird / nPlus) < 0 ? 0 : Double
-                        .compare(p, nMinus / nPlus) >= 0 ? length : nPlus * p +
-                        oneThird;
+                final double minLimit = 2 * (1d / 3) / (length + 1d / 3);
+                final double maxLimit =
+                        (length - 1d / 3) / (length + 1d / 3);
+                return Double.compare(p, minLimit) < 0 ? 0 :
+                       Double.compare(p, maxLimit) >= 0 ? length :
+                           (length + 1d / 3) * p + 1d / 3;
+            }
+        },
+
+        /**
+         * The method R9 has the following formulae for index and estimates<br>
+         * \( \begin{align}
+         * &amp;index = (N + 1/4)p + 3/8\\
+         * &amp;estimate = x_{\lfloor h \rfloor} + (h -
+           \lfloor h \rfloor) (x_{\lfloor h \rfloor + 1} - x_{\lfloor h
+         * \rfloor}) \\
+         * &amp;minLimit = (5/8)/(N+1/4) \\
+         * &amp;maxLimit = (N-3/8)/(N+1/4) \\
+         * \end{align}\)
+         */
+        R_9("R-9") {
+            @Override
+            protected double index(final double p, final int length) {
+                final double minLimit = 5d/8 / (length + 0.25);
+                final double maxLimit = (length - 3d/8) / (length + 0.25);
+                return Double.compare(p, minLimit) < 0 ? 0 :
+                       Double.compare(p, maxLimit) >= 0 ? length :
+                               (length + 0.25) * p + 3d/8;
             }
 
-        };
+        },
+        ;
 
         /** Set of double values to be excluded from computation */
         @SuppressWarnings("serial")
@@ -669,16 +798,16 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         /**
          * Constructor
          *
-         * @param type type of technique as per wikipedia
+         * @param type name of estimation type as per wikipedia
          */
-        EstimationTechnique(String type) {
+        Type(String type) {
             this.name = type;
         }
 
         /**
          * Finds the index of array that can be used as starting index to
          * {@link #estimate(double[], int[], double, int) estimate} percentile.
-         * The index calculation is specific to each {@link EstimationTechnique}
+         * The index calculation is specific to each {@link Type}
          *
          * @param p the p<sup>th</sup> quantile
          * @param length the total number of array elements in the work array
@@ -952,7 +1081,8 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
     /**
      * A strategy to pick a pivoting index of an array for doing partitioning
-     * and can be any of {@link MEDIAN_OF_3},{@link RANDOM} or {@link CENTRAL}.
+     * and can be any of {@link PivotingStrategy#MEDIAN_OF_3},
+     * {@link PivotingStrategy#RANDOM} or {@link PivotingStrategy#CENTRAL}.
      * This is used for K<sup>th</sup> element selection for the computation.
      */
     public static enum PivotingStrategy {
