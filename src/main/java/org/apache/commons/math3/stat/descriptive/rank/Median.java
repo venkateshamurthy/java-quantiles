@@ -18,7 +18,6 @@ package org.apache.commons.math3.stat.descriptive.rank;
 
 import java.io.Serializable;
 
-import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.NullArgumentException;
 
 
@@ -58,14 +57,13 @@ public class Median extends Percentile implements Serializable {
     }
 
     /**
-     * Constructs a median with a specific EstimationTechnique.
-     *
-     * @param technique one of the percentile EstimationTechnique
-     * @throws MathIllegalArgumentException if p is not greater than 0 and less
-     *             than or equal to 100
+     * Constructs a median with a specific estimation
+     * {@link  org.apache.commons.math3.stat.descriptive.rank.Percentile.Type type}
+     * @param type one of the percentile
+     * @see  org.apache.commons.math3.stat.descriptive.rank.Percentile.Type
+     * @throws NullArgumentException if type passed is null
      */
-    public Median(EstimationTechnique technique)
-            throws MathIllegalArgumentException {
-        super(50.0, technique);
+    public Median(Type type) throws NullArgumentException {
+        super(50.0, type);
     }
 }
