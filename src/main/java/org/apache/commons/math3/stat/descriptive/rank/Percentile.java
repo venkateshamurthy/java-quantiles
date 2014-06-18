@@ -15,27 +15,31 @@
  * limitations under the License.
  */
 package org.apache.commons.math3.stat.descriptive.rank;
+import static java.lang.Double.NEGATIVE_INFINITY;
+import static java.lang.Double.NaN;
+import static java.lang.Double.POSITIVE_INFINITY;
 import static org.apache.commons.math3.stat.descriptive.rank.Percentile.PivotingStrategy.MEDIAN_OF_3;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.MathUnsupportedOperationException;
-import org.apache.commons.math3.exception.NotFiniteNumberException;
+import org.apache.commons.math3.exception.NotANumberException;
 import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
 import org.apache.commons.math3.exception.util.LocalizedFormats;
 import org.apache.commons.math3.random.RandomDataGenerator;
 import org.apache.commons.math3.stat.descriptive.AbstractUnivariateStatistic;
-import org.apache.commons.math3.util.DoubleArray;
+import org.apache.commons.math3.stat.ranking.NaNStrategy;
 import org.apache.commons.math3.util.FastMath;
 import org.apache.commons.math3.util.MathArrays;
 import org.apache.commons.math3.util.MathUtils;
-import org.apache.commons.math3.util.ResizableDoubleArray;
 
 /**
  * Provides percentile computation.
@@ -74,6 +78,11 @@ import org.apache.commons.math3.util.ResizableDoubleArray;
  * elements, arrays containing  <code>NaN</code> or infinite values will often
  * result in <code>NaN</code> or infinite values returned.</p>
  * <p>
+ * Further, to include different estimation types such as R1, R2 as mentioned in
+ * <a href="http://en.wikipedia.org/wiki/Quantile">Quantile page(wikipedia)</a>,
+ * a type specific NaN handling strategy is used to closely match with the
+ * typically observed results from popular tools like R(R1-R9), Excel(R7).</p>
+ * <p>
  * Since 2.2, Percentile uses only selection instead of complete sorting
  * and caches selection algorithm state between calls to the various
  * {@code evaluate} methods. This greatly improves efficiency, both for a single
@@ -96,6 +105,38 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     /** Serializable version identifier */
     private static final long serialVersionUID = -8091216485095130416L;
 
+    /**
+     * Default {@link NaNStrategy} to be used with each {@link Type}.
+     * <p>
+     * To closely match with the the behavior of current
+     * implementation of Percentile and of other {@link Type types} with respect
+     * to handling NaNs in the input; a type-specific default
+     * {@link NaNStrategy strategy} is used for handling NaNs.<br>
+     * <p>
+     * For example; the defaults for the existing implementation and excel:
+     * <ul>
+     * <li>{@link Type#CM Percentile} uses {@link NaNStrategy#FIXED FIXED}</li>
+     * <li>{@link Type#R_7 Excel} uses {@link NaNStrategy#REMOVED REMOVED}</li>
+     * </ul>
+     */
+    @SuppressWarnings("serial")
+    protected static final Map<Type,NaNStrategy> DEFAULT_NAN_HANDLING_PER_TYPE =
+            Collections.unmodifiableMap(
+                    new EnumMap<Type, NaNStrategy>(Type.class) {
+                        {
+                            put(Type.CM,NaNStrategy.FIXED);
+                            put(Type.R_1,NaNStrategy.REMOVED);
+                            put(Type.R_2,NaNStrategy.REMOVED);
+                            put(Type.R_3,NaNStrategy.REMOVED);
+                            put(Type.R_4,NaNStrategy.REMOVED);
+                            put(Type.R_5,NaNStrategy.REMOVED);
+                            put(Type.R_6,NaNStrategy.REMOVED);
+                            put(Type.R_7,NaNStrategy.REMOVED);
+                            put(Type.R_8,NaNStrategy.REMOVED);
+                            put(Type.R_9,NaNStrategy.REMOVED);
+                        }
+                    });
+
     /** Maximum number of partitioning pivots cached (each level double the number of pivots). */
     private static final int MAX_CACHED_LEVELS = 10;
 
@@ -105,8 +146,11 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     /** Default pivoting strategy used while doing K<sup>th</sup> selection */
     private static PivotingStrategy pivotingStrategy = MEDIAN_OF_3;
 
-    /** Any of the {@link Type}s such as DEFAULT can be used. */
-    private final Type estimationType;
+    /** Any of the {@link Type}s such as {@link Type#CM CM} can be used. */
+    protected final Type estimationType;
+
+    /** NaN Handling of the input as defined by {@link NaNStrategy} */
+    private final NaNStrategy nanStrategy;
 
     /** Determines what percentile is computed when evaluate() is activated
      * with no quantile argument */
@@ -131,7 +175,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * than or equal to 100
      */
     public Percentile(final double p) throws MathIllegalArgumentException {
-        this(p, Type.CM);//uses DEFAULT Estimation
+        this(p, Type.CM, DEFAULT_NAN_HANDLING_PER_TYPE.get(Type.CM));
     }
 
     /**
@@ -143,41 +187,76 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      */
     public Percentile(Percentile original) throws NullArgumentException {
         estimationType = original.getEstimationType();
+        nanStrategy = original.getNaNStrategy();
         copy(original, this);
     }
 
-    /**
-     * Constructs a percentile with the specific quantile value and an
-     * {@link Type}.
-     *
-     * @param p the quantile to be computed
-     * @param type one of the percentile {@link Type
-     *            estimation types}
-     * @throws MathIllegalArgumentException if p is not greater than 0 and less
-     *             than or equal to 100
-     * @throws NullArgumentException if type passed in null
-     */
-    public Percentile(final double p, Type type)
-            throws MathIllegalArgumentException {
-        setQuantile(p);
-        cachedPivots = null;
-        MathUtils.checkNotNull(type);
-        estimationType = type;
-    }
 
     /**
-     * Constructs a default percentile with a specific
-     * {@link Type}.
+     * Constructs a Percentile with a median quantile and specific {@link Type}.
      *
      * @param type one of the percentile {@link Type
      *            estimation types}
      * @throws NullArgumentException if type is null
      */
-    public Percentile(Type type)
-            throws NullArgumentException {
+    public Percentile(Type type) throws NullArgumentException {
         this(50, type);
     }
 
+    /**
+     * Constructs a Percentile with the specific quantile value and a specific
+     * {@link Type}.
+     *
+     * @param p the quantile to be computed
+     * @param type one of the percentile estimation {@link Type types}
+     * @throws MathIllegalArgumentException if p is not within (0,100]
+     * @throws NullArgumentException if type  passed in null
+     */
+     public Percentile(final double p, Type type)
+             throws MathIllegalArgumentException {
+         this(p, type, DEFAULT_NAN_HANDLING_PER_TYPE.get(type));
+     }
+
+    /**
+     * Constructs a Percentile with the specific quantile value,
+     * a {@link Type} and a {@link NaNStrategy}.
+     * <p>
+     * This constructor is restricted to be used from sub classes that may need
+     * to override the default setting of {@link NaNStrategy} per {@link Type}.
+     * <p>
+     * For example:
+     * <pre>
+     *    private static class MyPercentile extends Percentile{
+     *       private static final Map<Type, NaNStrategy> map =
+     *               new HashMap<Type, NaNStrategy>() {
+     *           {
+     *              putAll(Percentile.DEFAULT_NAN_HANDLING_PER_TYPE);
+     *              put(CM, NaNStrategy.MAXIMAL);
+     *              put(R_7, NaNStrategy.MINIMAL);
+     *              put(R_9, NaNStrategy.FAILED);
+     *           }
+     *       };
+     *       public MyPercentile(double p, Type type) {
+     *           super(p, type, map.get(type)); //invokes protected constructor
+     *       }
+     *    }
+     * </pre>
+     *
+     * @param p the quantile to be computed
+     * @param type one of the percentile {@link Type  estimation types}
+     * @param nanHandling one of {@link NaNStrategy} to handle with NaNs
+     * @throws MathIllegalArgumentException if p is not within (0,100]
+     * @throws NullArgumentException if type or NaNStrategy passed is null
+     */
+    protected Percentile(final double p, Type type, NaNStrategy nanHandling)
+            throws MathIllegalArgumentException {
+        setQuantile(p);
+        cachedPivots = null;
+        MathUtils.checkNotNull(type);
+        MathUtils.checkNotNull(nanHandling);
+        estimationType = type;
+        nanStrategy = nanHandling;
+    }
 
     /** {@inheritDoc} */
     @Override
@@ -324,11 +403,12 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         if (length == 1) {
             return values[begin]; // always return single value for n = 1
         }
+
         final double[] work = getWorkArray(values, begin, length);
         final int[] pivotsHeap = getPivots(values);
-        return estimationType.evaluate(work, pivotsHeap, length, p);
+        return work.length == 0 ? Double.NaN :
+                    estimationType.evaluate(work, pivotsHeap, p);
     }
-
 
     /** Select a pivot index as the median of three
      * <p>
@@ -350,12 +430,19 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         throw new MathUnsupportedOperationException();
     }
 
+    /**
+     * Get the {@link NaNStrategy NaN Handling} strategy used for computation.
+     * @return {@code nanStrategy} set during construction
+     */
+    public NaNStrategy getNaNStrategy() {
+        return nanStrategy;
+    }
 
     /**
      * Returns the value of the quantile field (determines what percentile is
      * computed when evaluate() is called with no quantile argument).
      *
-     * @return quantile
+     * @return quantile set while construction or {@link #setQuantile(double)}
      */
     public double getQuantile() {
         return quantile;
@@ -382,7 +469,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      */
     @Override
     public Percentile copy() {
-        Percentile result = new Percentile();
+        Percentile result = new Percentile(quantile,estimationType,nanStrategy);
         //No try-catch or advertised exception because args are guaranteed non-null
         copy(this, result);
         return result;
@@ -408,23 +495,159 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     }
 
     /**
-     * Get the work array to operate
+     * Get the work array to operate. Makes use of prior {@code storedData} if
+     * it exists or else do a check on NaNs and copy a subset of the array
+     * defined by begin and length parameters. The set {@link #nanStrategy} will
+     * be used to either remove or replace any NaNs present before returning the
+     * resultant array.
      *
      * @param values the array of numbers
      * @param begin index to start reading the array
      * @param length the length of array to be read from the begin index
      * @return work array sliced from values in the range [begin,begin+length)
+     * @throws MathIllegalArgumentException if values or indices are invalid
      */
-    private double[] getWorkArray(final double[] values, final int begin,
+    protected double[] getWorkArray(final double[] values, final int begin,
             final int length) {
-        double[] work;
+        final double[] work;
         if (values == getDataRef()) {
             work = getDataRef();
         } else {
-            work = new double[length];
-            System.arraycopy(values, begin, work, 0, length);
+            switch (nanStrategy) {
+            case MAXIMAL:// Replace NaNs with +INFs
+                work = replaceAndSlice(values, begin, length,
+                        NaN, POSITIVE_INFINITY);
+                break;
+            case MINIMAL:// Replace NaNs with -INFs
+                work = replaceAndSlice(values, begin, length,
+                        NaN, NEGATIVE_INFINITY);
+                break;
+            case REMOVED:// Drop NaNs from data
+                work = removeAndSlice(values, begin, length, NaN);
+                break;
+            case FAILED:{// just throw exception as NaN is un-acceptable
+                checkNotANumber(values, begin, length);
+                work = copyOf(values, begin, length);
+                break;
+            }
+            default: //FIXED
+                work = copyOf(values,begin,length);
+                break;
+            }
         }
         return work;
+    }
+
+    /**
+     * Check the presence of {@link Double#NaN NaN} in a double array for the
+     * array slice defined by array part from [begin,begin+length) and throw an
+     * exception on detecting the first presence within the defined slice.
+     * @param values the input array
+     * @param begin start index of the array to include
+     * @param length number of elements to include from begin
+     * @throws NotANumberException if any of the values contain a NaN
+     */
+    private static void checkNotANumber(final double[] values,
+            final int begin, final int length) {
+        MathArrays.verifyValues(values, begin, length);
+        for(int i = begin; i < begin + length; i++) {
+            if(Double.isNaN(values[i])) {
+                throw new NotANumberException();
+            }
+        }
+    }
+
+    /**
+     * Make a copy of the array for the slice defined by array part from
+     * [begin, begin+length)
+     * @param values the input array
+     * @param begin start index of the array to include
+     * @param length number of elements to include from begin
+     * @return copy of a slice of the original array
+     */
+    private static double[] copyOf(final double[] values, final int begin,
+            final int length) {
+        MathArrays.verifyValues(values, begin, length);
+        final double[] copy = new double[length];
+        System.arraycopy(values, begin, copy, 0,
+                FastMath.min(length, values.length));
+        return copy;
+    }
+
+    /**
+     * Replace every occurrence of a given value with a replacement value in a
+     * copied slice of array defined by array part from [begin, begin+length).
+     * @param values the input array
+     * @param begin start index of the array to include
+     * @param length number of elements to include from begin
+     * @param original the value to be replaced with
+     * @param replacement the value to be used for replacement
+     * @return the copy of sliced array with replaced values
+     */
+    private static double[] replaceAndSlice(final double[] values,
+            final int begin, final int length, final double original,
+            final double replacement) {
+        final double[] temp = copyOf(values, begin, length);
+        for(int i = 0; i < length; i++) {
+            //First a quick check on if both are NaN
+            final boolean areBothNaNs = Double.isNaN(original) &&
+                                    Double.isNaN(values[i]);
+            temp[i] = areBothNaNs || Double.compare(original, temp[i]) == 0 ?
+                                    replacement : temp[i];
+        }
+        return temp;
+    }
+
+    /**
+     * Remove the occurrence of a given value in a copied slice of array
+     * defined by the array part from [begin, begin+length).
+     * @param values the input array
+     * @param begin start index of the array to include
+     * @param length number of elements to include from begin
+     * @param removedValue the value to be removed from the sliced array
+     * @return the copy of the sliced array after removing the removedValue
+     */
+    private static double[] removeAndSlice(final double[] values,
+            final int begin, final int length, final double removedValue) {
+        MathArrays.verifyValues(values, begin, length);
+
+        final double [] temp;
+        final List<Integer> occurencesToRemove = new ArrayList<Integer>();
+
+        //First register for all occurrences of removable value
+        for(int i= begin; i < begin + length; i++) {
+            //Do a quick check on if both are NaN
+            final boolean areBothNaNs = Double.isNaN(removedValue) &&
+                                        Double.isNaN(values[i]);
+            if(areBothNaNs || Double.compare(values[i], removedValue)==0) {
+                occurencesToRemove.add(i);
+            }
+        }
+
+        //Next, get the slice of array with removable peeled off.
+        if(occurencesToRemove.isEmpty()) {
+            temp = copyOf(values,begin,length); //just do a copy
+        }
+        else if(occurencesToRemove.size() == length) {
+            temp = new double[0]; //all were NaNs; so return a zero length
+        }
+        else /*if(occurancesToRemove.size()>0)*/ {
+            temp = new double[length - occurencesToRemove.size()];
+            int start = begin;
+            int destStart = 0;
+            // copy off the retained ones in steps
+            for (final int current: occurencesToRemove) {
+                final int numsToMove = current - start;
+                System.arraycopy(values, start, temp, destStart, numsToMove);
+                destStart += numsToMove;
+                start = current + 1;
+            }
+            //Copy any residue past start index till length
+            if(start < length) {
+                System.arraycopy(values,start,temp,destStart,length-start);
+            }
+        }
+        return temp;
     }
 
     /**
@@ -445,24 +668,25 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
     }
 
     /**
-     * Get the estimation type set
+     * Get the estimation {@link Type type} used for computation.
      *
-     * @return the estimation type
+     * @return the {@code estimationType} set
      */
     public Type getEstimationType() {
         return estimationType;
     }
 
     /**
-     * Get the {@link PivotingStrategy pivoting strategy} used
-     * @return the pivotingStrategy set
+     * Get the {@link PivotingStrategy pivoting strategy} used for computation.
+     * @return the {@code pivotingStrategy} set
      */
     public static PivotingStrategy getPivotingStrategy() {
         return pivotingStrategy;
     }
 
     /**
-     * Set a {@link PivotingStrategy pivoting} strategy which can one of
+     * Set the {@link PivotingStrategy pivoting} strategy which can be any of
+     * the following strategies.
      * <ul>
      * <li>{@link PivotingStrategy#MEDIAN_OF_3 MEDIAN_OF_3}</li>
      * <li>{@link PivotingStrategy#CENTRAL CENTRAL}</li>
@@ -526,11 +750,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
          * \end{align}\)
          */
         CM("Commons Math") {
-            {
-                {
-                    exclusions.clear();
-                }
-            }
             /**
              * {@inheritDoc}.This method in particular makes use of existing
              * Apache Commons Math style of picking up the index.
@@ -543,19 +762,9 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
                        Double.compare(p, maxLimit) == 0 ?
                                length : p * (length + 1);
             }
-
-            /**
-             * {@inheritDoc}. This type does'nt need filtering and
-             * hence dummied out
-             */
-            @Override
-            protected double[] preProcess(final double[] work,
-                    final AtomicInteger lengthHolder) {
-                return work;
-            }
         },
         /**
-         * The method R1 has the following formulae for index and estimates<br>
+         * The method R_1 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= Np + 1/2\,  \\
          * &amp;estimate= x_{\lceil h\,-\,1/2 \rceil} \\
@@ -571,7 +780,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             }
 
             /**
-             * {@inheritDoc}This method in particular for R1 uses ceil(pos-0.5)
+             * {@inheritDoc}This method in particular for R_1 uses ceil(pos-0.5)
              */
             @Override
             protected double estimate(final double[] values,
@@ -583,7 +792,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         },
         /**
-         * The method R2 has the following formulae for index and estimates<br>
+         * The method R_2 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= Np + 1/2\, \\
          * &amp;estimate=\frac{x_{\lceil h\,-\,1/2 \rceil} +
@@ -603,7 +812,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             }
 
             /**
-             * {@inheritDoc}This method in particular for R2 averages the
+             * {@inheritDoc}This method in particular for R_2 averages the
              * values at ceil(p+0.5) and floor(p-0.5).
              */
             @Override
@@ -621,7 +830,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         },
         /**
-         * The method R3 has the following formulae for index and estimates<br>
+         * The method R_3 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= Np \\
          * &amp;estimate= x_{\lfloor h \rceil}\, \\
@@ -638,7 +847,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         },
         /**
-         * The method R4 has the following formulae for index and estimates<br>
+         * The method R_4 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= Np\, \\
          * &amp;estimate= x_{\lfloor h \rfloor} + (h -
@@ -659,7 +868,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         },
         /**
-         * The method R5 has the following formulae for index and estimates<br>
+         * The method R_5 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= Np + 1/2\\
          * &amp;estimate= x_{\lfloor h \rfloor} + (h -
@@ -681,7 +890,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             }
         },
         /**
-         * The method R6 has the following formulae for index and estimates<br>
+         * The method R_6 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index= (N + 1)p \\
          * &amp;estimate= x_{\lfloor h \rfloor} + (h -
@@ -710,7 +919,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
 
         /**
-         * The method R7 implements Microsoft Excel style computation has the
+         * The method R_7 implements Microsoft Excel style computation has the
          * following formulae for index and estimates.<br>
          * \( \begin{align}
          * &amp;index = (N-1)p + 1 \\
@@ -734,7 +943,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
 
         /**
-         * The method R8 has the following formulae for index and estimates<br>
+         * The method R_8 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index = (N + 1/3)p + 1/3  \\
          * &amp;estimate = x_{\lfloor h \rfloor} + (h -
@@ -760,7 +969,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
         },
 
         /**
-         * The method R9 has the following formulae for index and estimates<br>
+         * The method R_9 has the following formulae for index and estimates<br>
          * \( \begin{align}
          * &amp;index = (N + 1/4)p + 3/8\\
          * &amp;estimate = x_{\lfloor h \rfloor} + (h -
@@ -782,15 +991,6 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
 
         },
         ;
-
-        /** Set of double values to be excluded from computation */
-        @SuppressWarnings("serial")
-        protected final Set<Double> exclusions = new HashSet<Double>()
-                                                 {
-                                                    {
-                                                       add(Double.NaN);
-                                                    }
-                                                 };
 
         /** Simple name such as R-1, R-2 corresponding to those in wikipedia. */
         private final String name;
@@ -856,28 +1056,21 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
          *
          * @param work array of numbers to be used for finding the percentile
          * @param pivotsHeap a prior cached heap which can speed up estimation
-         * @param length the number of array elements to include
          * @param p the p<sup>th</sup> quantile to be computed
          * @return estimated percentile
-         * @throws OutOfRangeException if length or p is out of range
+         * @throws OutOfRangeException if p is out of range
          * @throws NullArgumentException if work array is null
          */
         protected double evaluate(final double[] work, final int[] pivotsHeap,
-                final int length, final double p) {
+                final double p) {
             MathUtils.checkNotNull(work);
             if (p > 100 || p <= 0) {
                 throw new OutOfRangeException(
                         LocalizedFormats.OUT_OF_BOUNDS_QUANTILE_VALUE,
                         p, 0, 100);
             }
-            if (length < 0 || length > work.length) {
-                throw new OutOfRangeException(length, 0, work.length);
-            }
-            final double quantile=p/100;
-            final AtomicInteger lengthHolder=new AtomicInteger(length);
-            final double[] newWork=preProcess(work,lengthHolder);
-            return estimate(newWork, pivotsHeap,
-                    index(quantile, lengthHolder.get()), lengthHolder.get());
+            return estimate(work, pivotsHeap, index(p/100d, work.length),
+                    work.length);
         }
 
         /**
@@ -888,55 +1081,13 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
          * note that this method does not make use of cached pivots.
          *
          * @param work array of numbers to be used for finding the percentile
-         * @param length the number of array elements to include
          * @param p the p<sup>th</sup> quantile to be computed
          * @return estimated percentile
          * @throws OutOfRangeException if length or p is out of range
          * @throws NullArgumentException if work array is null
          */
-        public double evaluate(final double[] work, final int length,
-                final double p) {
-            return this.evaluate(work, null, length, p);
-        }
-
-        /**
-         * A function to filter out unneeded elements in the array. The sub
-         * classes can do further filtering such as infinities if needed.
-         *
-         * @param work the array containing the input numbers
-         * @param lengthHolder a holder of length of work array which gets
-         *            updated and can be accessed by the caller.
-         * @return processed array after required filtering
-         * @throws MathIllegalArgumentException if lengthHolder is out of range
-         * @throws NullArgumentException if work array or lengthHolder is null
-         */
-        protected double[] preProcess(final double[] work,
-                final AtomicInteger lengthHolder) {
-
-            MathUtils.checkNotNull(lengthHolder);
-            final int length = lengthHolder.get();
-            MathArrays.verifyValues(work,0,length);
-
-            double[] newWork=work;
-            try {
-                MathUtils.checkFinite(work);
-            } catch (NotFiniteNumberException nfe) {
-
-                // Filter out only if exclusion is not empty
-                if(!exclusions.isEmpty()) {
-                    final DoubleArray array =
-                            new ResizableDoubleArray(work.length);
-                    for (double element:work) {
-                        if(exclusions.contains(element)) {
-                            lengthHolder.decrementAndGet();
-                        }else {
-                            array.addElement(element);
-                        }
-                    }
-                    newWork=array.getElements();
-                }
-            }
-            return newWork;
+        public double evaluate(final double[] work, final double p) {
+            return this.evaluate(work, null, p);
         }
 
         /**
@@ -1083,7 +1234,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
      * A strategy to pick a pivoting index of an array for doing partitioning
      * and can be any of {@link PivotingStrategy#MEDIAN_OF_3},
      * {@link PivotingStrategy#RANDOM} or {@link PivotingStrategy#CENTRAL}.
-     * This is used for K<sup>th</sup> element selection for the computation.
+     * This is used for K<sup>th</sup> element selection done during computation.
      */
     public static enum PivotingStrategy {
 
@@ -1122,7 +1273,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             }
         },
 
-        /** A strategy of selecting random index between first and last index*/
+        /** A strategy of selecting random index between begin and end indices*/
         RANDOM(){
 
             /**
@@ -1140,7 +1291,7 @@ public class Percentile extends AbstractUnivariateStatistic implements Serializa
             }
         },
 
-        /** A mid point strategy based on the average of first and last index */
+        /** A mid point strategy based on the average of begin and end indices */
         CENTRAL(){
 
             /**
