@@ -27,16 +27,22 @@ import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_8
 import static org.apache.commons.math3.stat.descriptive.rank.Percentile.Type.R_9;
 
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.MathUnsupportedOperationException;
+import org.apache.commons.math3.exception.NotANumberException;
 import org.apache.commons.math3.exception.NullArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
+import org.apache.commons.math3.random.JDKRandomGenerator;
+import org.apache.commons.math3.random.RandomGenerator;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatisticAbstractTest;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile.PivotingStrategy;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile.Type;
+import org.apache.commons.math3.stat.ranking.NaNStrategy;
 import org.apache.commons.math3.util.MathArrays;
 import org.junit.Assert;
 import org.junit.Before;
@@ -49,6 +55,45 @@ import org.junit.Test;
 public class PercentileTest extends UnivariateStatisticAbstractTest{
 
     protected Percentile stat;
+
+    /**
+     * {@link org.apache.commons.math3.stat.descriptive.rank.Percentile.Type type}
+     * of estimation to be used while calling {@link #getUnivariateStatistic()}
+     */
+    protected Type type = CM;
+
+    /**
+     * A default percentile to be used for {@link #getUnivariateStatistic()}
+     */
+    protected final double DEFAULT_PERCENTILE = 95d;
+
+    /**
+     * {@link org.apache.commons.math3.stat.descriptive.rank.Percentile.Type TYPE}s
+     * that this test will verify against
+     */
+    protected static final Type[] TYPE =
+            new Type[] { CM, R_1, R_2, R_3, R_4, R_5, R_6, R_7, R_8, R_9};
+
+    /**
+     * Before method to ensure defaults retained
+     */
+    @Before
+    public void before() {
+        Percentile.setPivotingStrategy(PivotingStrategy.MEDIAN_OF_3);
+        type = CM;
+    }
+
+    /**
+     * Gets a percentile with given percentile and given estimation type
+     *
+     * @param p pth Quantile to be computed
+     * @param type One of the {@link Type}
+     * @return Percentile object created
+     */
+    public UnivariateStatistic getUnivariateStatistic(double p,
+            Type type) {
+        return new Percentile(p, type);
+    }
 
     /**
      * {@inheritDoc}
@@ -186,56 +231,19 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
             // expected
         }
     }
-    /**
-     * vmurthy changes
-     * The below tests are done for all the estimation types as it
-     * basically picks up the same tests specified in the enclosing class but
-     * applies to all types as elucidated in {@link EstimationTechnique}.
-     */
-    /**
-     * type of estimation to be used while calling
-     * {@link #getUnivariateStatistic()}
-     */
-    protected Type type = CM;
 
+    //Below tests are basically to run for all estimation types.
     /**
-     * A default percentile to be used for {@link #getUnivariateStatistic()}
+     * While {@link #testHighPercentile()} checks only for the existing
+     * implementation; this method verifies for all the types including CM type.
      */
-    protected final double DEFAULT_PERCENTILE = 95d;
-
-    /**
-     * {@link Type}s that this test will verify against
-     */
-    protected static final Type[] TYPE =
-            new Type[] { CM, R_1, R_2, R_3, R_4, R_5, R_6, R_7, R_8, R_9};
-
-    /**
-     * Before method to ensure defaults retained
-     */
-    @Before
-    public void before() {
-        Percentile.setPivotingStrategy(PivotingStrategy.MEDIAN_OF_3);
-        type = CM;
-    }
-
-    /**
-     * Gets a percentile with given percentile and given estimation type
-     *
-     * @param p pth Quantile to be computed
-     * @param type One of the {@link Type}
-     * @return Percentile object created
-     */
-    public UnivariateStatistic getUnivariateStatistic(double p,
-            Type type) {
-        return new Percentile(p, type);
-    }
-
     @Test
     public void testAllTechniquesHighPercentile() {
         double[] d = new double[] { 1, 2, 3 };
         testAssertMappedValues(d, new Object[][] { { CM, 3d }, { R_1, 3d },
-                { R_2, 3d }, { R_3, 2d }, { R_4, 2.25 }, {R_5,2.75}, {R_6,3.0},
-                { R_7, 2.5 },{ R_8, 2.83333 }, {R_9,2.81250} }, 75d, 1.0e-5);
+                { R_2, 3d }, { R_3, 2d }, { R_4, 2.25 }, { R_5, 2.75 },
+                { R_6, 3d }, { R_7, 2.5 },{ R_8, 2.83333 }, {R_9,2.81250} },
+                75d, 1.0e-5);
     }
 
     @Test
@@ -274,7 +282,8 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         // invalid percentiles
         for (Type e : TYPE) {
             try {
-                new Percentile(-1.0, e).evaluate(d, 0, d.length, -1.0);
+                new Percentile(-1.0, e).evaluate(d,
+                                0, d.length, -1.0);
                 Assert.fail();
             } catch (MathIllegalArgumentException ex) {
                 // success
@@ -283,7 +292,8 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
 
         for (Type e : TYPE) {
             try {
-                new Percentile(101.0, e).evaluate(d, 0, d.length, 101.0);
+                new Percentile(101.0, e).evaluate(d,
+                        0, d.length, 101.0);
                 Assert.fail();
             } catch (MathIllegalArgumentException ex) {
                 // success
@@ -355,6 +365,7 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
             }
             Assert.assertTrue(Double.isNaN(percentile.evaluate(emptyArray)));
         }
+
     }
 
     @Test
@@ -398,6 +409,51 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         Percentile.setPivotingStrategy(null);
     }
 
+
+    @Test
+    public void testReplaceNanInRange() {
+        double[] specialValues =
+                new double[] { 0d, 1d, 2d, 3d, 4d, Double.NaN, Double.NaN, 5d,
+                7d, Double.NaN, 8d};
+        Assert.assertEquals(5d,new Percentile(50d).evaluate(specialValues),0d);
+        Assert.assertEquals(3d,new Percentile(50d,Type.R_1)
+                                                .evaluate(specialValues),0d);
+        Assert.assertEquals(3.5d,new Percentile(50d,Type.R_2)
+                                                .evaluate(specialValues),0d);
+
+    }
+
+    @Test
+    public void testRemoveNan() {
+        double[] specialValues =
+                new double[] { 0d, 1d, 2d, 3d, 4d, Double.NaN };
+        double[] expectedValues =
+                new double[] { 0d, 1d, 2d, 3d, 4d };
+        Assert.assertEquals(2.0,
+                new Percentile(50d,Type.R_1).evaluate(specialValues),0d);
+        Assert.assertEquals(2.0,
+                new Percentile(50d,Type.R_1).evaluate(expectedValues),0d);
+        Assert.assertTrue(Double.isNaN(
+                new Percentile(50d,Type.R_1).evaluate(specialValues,5,1)));
+        Assert.assertEquals(4d,new Percentile(50d,Type.R_1)
+                                        .evaluate(specialValues,4,2),0d);
+        Assert.assertEquals(3d,new Percentile(50d,Type.R_1)
+        .evaluate(specialValues,3,3),0d);
+        Assert.assertEquals(3.5d,new Percentile(50d,Type.R_2)
+        .evaluate(specialValues,3,3),0d);
+
+    }
+
+    @Test
+    public void testPercentileCopy() {
+       Percentile original= new Percentile(50d,Type.CM);
+       Percentile copy = new Percentile(original);
+       Assert.assertEquals(original.getNaNStrategy(),copy.getNaNStrategy());
+       Assert.assertEquals(original.getQuantile(), copy.getQuantile(),0d);
+       Assert.assertEquals(original.getEstimationType(),copy.getEstimationType());
+       Assert.assertEquals(NaNStrategy.FIXED, original.getNaNStrategy());
+    }
+
     @Test
     public void testAllTechniquesSpecialValues() {
         UnivariateStatistic percentile = getUnivariateStatistic(50d, CM);
@@ -439,8 +495,6 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
 
         specialValues = new double[] { 1d, 1d, Double.NaN, Double.NaN };
         Assert.assertTrue(Double.isNaN(percentile.evaluate(specialValues)));
-        Assert.assertTrue(specialValues==CM.preProcess(specialValues,
-                new AtomicInteger(specialValues.length)));
         testAssertMappedValues(specialValues, new Object[][] {
                 { CM, Double.NaN }, { R_1, 1.0 }, { R_2, 1.0 }, { R_3, 1.0 },
                 { R_4, 1.0 }, { R_5, 1.0 },{ R_6, 1.0 },{ R_7, 1.0 },
@@ -477,23 +531,6 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
             } catch (MathIllegalArgumentException ex) {
                 // expected
             }
-
-
-            try {
-                e.preProcess(testArray, null);
-            }catch(MathIllegalArgumentException ex) {
-                //expected
-            }
-            try {
-                e.preProcess(testArray, new AtomicInteger(-1));
-            }catch(MathIllegalArgumentException ex) {
-                //expected
-            }
-            try {
-                e.preProcess(null, new AtomicInteger(10));
-            }catch(MathIllegalArgumentException ex) {
-                //expected
-            }
         }
     }
 
@@ -512,6 +549,7 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
             testEvaluateArraySegment();
         }
     }
+
 
     @Test
     public void testAllTechniquesWeightedConsistency() {
@@ -546,6 +584,33 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         Assert.assertFalse(R_1.equals(p.getEstimationType()));
     }
 
+    static final int TINY = 10, SMALL = 50, NOMINAL = 100, MEDIUM = 500,
+            STANDARD = 1000, BIG = 10000, VERY_BIG = 50000, LARGE = 1000000,
+            VERY_LARGE = 10000000;
+    static final int[] sampleSizes= {TINY , SMALL , NOMINAL , MEDIUM ,
+            STANDARD, BIG };
+
+    @Test
+    public void testStoredVsDirect() {
+        RandomGenerator rand= new JDKRandomGenerator();
+        rand.setSeed(Long.MAX_VALUE);
+        for(int sampleSize:sampleSizes) {
+            double[] data = new NormalDistribution(rand,4000, 50)
+                                .sample(sampleSize);
+            for(double p:new double[] {50d,95d}) {
+                for(Type e:Type.values()) {
+                    Percentile pStoredData = new Percentile(p,e);
+                    pStoredData.setData(data);
+                    double storedDataResult=pStoredData.evaluate();
+                    pStoredData.setData(null);
+                    Percentile pDirect = new Percentile(p,e);
+                    Assert.assertEquals("Sample="+sampleSize+",P="+p+" e="+e,
+                            storedDataResult,
+                            pDirect.evaluate(data),0d);
+                }
+            }
+        }
+    }
     @Test
     public void testPercentileWithDataRef() {
         Percentile p = new Percentile(R_7);
@@ -554,7 +619,6 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
         Assert.assertFalse(R_1.equals(p.getEstimationType()));
         Assert.assertEquals(12d, p.evaluate(), 0d);
         Assert.assertEquals(12.16d, p.evaluate(60d), 0d);
-
     }
 
     @SuppressWarnings("deprecation")
@@ -618,27 +682,22 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                         { R_5, 20.280}, { R_6, 20.820},
                         { R_7, 19.555 }, { R_8, 20.460 },{R_9,20.415} };
         try {
-            CM.evaluate(testArray, testArray.length,
+            CM.evaluate(testArray,
                     -1d );
         }catch(OutOfRangeException oore) {}
         try {
-            CM.evaluate(testArray, testArray.length,
+            CM.evaluate(testArray,
                     101d );
         }catch(OutOfRangeException oore) {}
         try {
-            CM.evaluate(testArray, -1,
-                    50d );
-        }catch(OutOfRangeException oore) {}
-        try {
-            CM.evaluate(testArray, testArray.length+1,
+            CM.evaluate(testArray,
                     50d );
         }catch(OutOfRangeException oore) {}
         for (Object[] o : map) {
             Type e = (Type) o[0];
             double expected = (Double) o[1];
             double result =
-                    e.evaluate(testArray, testArray.length,
-                            DEFAULT_PERCENTILE );
+                    e.evaluate(testArray, DEFAULT_PERCENTILE );
             Assert.assertEquals("expected[" + e + "] = " + expected +
                     " but was = " + result, expected, result, tolerance);
         }
@@ -678,24 +737,18 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
                 new Object[][] { { CM, 20.82 }, { R_1, 19.8 },
                         { R_2, 19.8 }, { R_3, 19.8 }, { R_4, 19.310 },
                         { R_5, 20.280}, { R_6, 20.820},
-                        { R_7, 19.555 }, { R_8, 20.460 },{R_9,20.415} };
+                        { R_7, 19.555 }, { R_8, 20.460 },{ R_9, 20.415 } };
         for (Object[] o : map) {
             Type e = (Type) o[0];
             try {
 
-                e.evaluate(null, testArray.length, DEFAULT_PERCENTILE );
+                e.evaluate(null, DEFAULT_PERCENTILE );
                 Assert.fail("Expecting NullArgumentException");
             } catch (NullArgumentException nae) {
                 // expected
             }
             try {
-                e.evaluate(testArray, -1, DEFAULT_PERCENTILE );
-                Assert.fail("Expecting OutOfRangeException");
-            } catch (OutOfRangeException oore) {
-                // expected
-            }
-            try {
-                e.evaluate(testArray, testArray.length, 120);
+                e.evaluate(testArray, 120);
                 Assert.fail("Expecting OutOfRangeException");
             } catch (OutOfRangeException oore) {
                 // expected
@@ -704,22 +757,131 @@ public class PercentileTest extends UnivariateStatisticAbstractTest{
     }
 
     /**
-     * Simple test assertion utility method
+     * Simple test assertion utility method assuming {@link NaNStrategy default}
+     * nan handling strategy specific to each {@link Type type}
      *
-     * @param d input data
+     * @param data input data
      * @param map of expected result against a {@link Type}
      * @param p the quantile to compute for
      * @param tolerance the tolerance of difference allowed
      */
-    protected void testAssertMappedValues(double[] d, Object[][] map, Double p,
-            Double tolerance) {
+    protected void testAssertMappedValues(double[] data, Object[][] map,
+            Double p, Double tolerance) {
         for (Object[] o : map) {
             Type e = (Type) o[0];
             double expected = (Double) o[1];
-            double result = getUnivariateStatistic(p, e).evaluate(d);
-            Assert.assertEquals("expected[" + e + "] = " + expected +
+            try {
+                double result = getUnivariateStatistic(p, e).evaluate(data);
+                Assert.assertEquals("expected[" + e + "] = " + expected +
                     " but was = " + result, expected, result, tolerance);
+            }catch(Exception ex) {
+                Assert.fail("Exception occured for estimation type "+e+":"+
+                        ex.getLocalizedMessage());
+            }
         }
     }
 
+    /**A Simple extension to show overriding of default NaN Strategy per type.*/
+    @SuppressWarnings("serial")
+    private static class NewPercentile extends Percentile{
+        /** map overrides the default mapping of type to NaN Strategy*/
+        private static final Map<Type,NaNStrategy> map =
+                new HashMap<Type,NaNStrategy>() {
+            {
+            putAll(Percentile.DEFAULT_NAN_HANDLING_PER_TYPE);
+            put(CM, NaNStrategy.MAXIMAL);
+            put(R_7, NaNStrategy.MINIMAL);
+            put(R_9, NaNStrategy.FAILED);
+            }
+        };
+        /**
+         * Constructor
+         * @param p the pth quantile
+         * @param type an instance of {@link Type}
+         */
+        public NewPercentile(double p, Type type) {
+            super(p, type, map.get(type)); //invokes the protected constructor
+        }
+    }
+
+    // Some NaNStrategy specific testing
+    @Test(expected=NotANumberException.class)
+    public void testNanStrategyFailed() {
+        double[] specialValues =
+                new double[] { 0d, 1d, 2d, 3d, 4d, Double.NaN };
+        Assert.assertTrue(Double.isNaN(new NewPercentile(50d,Type.CM)
+        .evaluate(specialValues,3,3)));
+        Assert.assertEquals(2d,new NewPercentile(50d,Type.R_1)
+        .evaluate(specialValues),0d);
+        Assert.assertEquals(Double.NaN,new NewPercentile(50d,Type.R_5)
+        .evaluate(new double[] {Double.NaN,Double.NaN,Double.NaN}),0d);
+        Assert.assertEquals(50d,new NewPercentile(50d,Type.R_7).evaluate(
+                new double[] {50d,50d,50d},1,2),0d);
+        new NewPercentile(50d,Type.R_9).evaluate(specialValues, 3, 3);
+    }
+
+    @Test
+    public void testAllTechniquesSpecialValuesWithNaNStrategy() {
+        double[] specialValues =
+                new double[] { 0d, 1d, 2d, 3d, 4d, Double.NaN };
+        try {
+            new Percentile(50d,Type.CM,null);
+            Assert.fail("Expecting NullArgumentArgumentException "
+                    + "for null Nan Strategy");
+        } catch (NullArgumentException ex) {
+            // expected
+        }
+        //This is as per each type's default NaNStrategy
+        testAssertMappedValues(specialValues, new Object[][] {
+                { CM, 2.5d }, { R_1, 2.0 }, { R_2, 2.0 }, { R_3, 1.0 },
+                { R_4, 1.5 }, { R_5, 2.0 }, { R_6, 2.0 },
+                { R_7, 2.0 }, { R_8, 2.0 }, { R_9, 2.0 }}, 50d, 0d);
+
+        //This is as per MAXIMAL and hence the values tend a +0.5 upward
+        testAssertMappedValues(specialValues, new Object[][] {
+                { CM, 2.5d }, { R_1, 2.0 }, { R_2, 2.5 }, { R_3, 2.0 },
+                { R_4, 2.0 }, { R_5, 2.5 }, { R_6, 2.5 },
+                { R_7, 2.5 }, { R_8, 2.5 }, { R_9, 2.5 }}, 50d, 0d,
+                NaNStrategy.MAXIMAL);
+
+        //This is as per MINIMAL and hence the values tend a -0.5 downward
+        testAssertMappedValues(specialValues, new Object[][] {
+                { CM, 1.5d }, { R_1, 1.0 }, { R_2, 1.5 }, { R_3, 1.0 },
+                { R_4, 1.0 }, { R_5, 1.5 }, { R_6, 1.5 },
+                { R_7, 1.5 }, { R_8, 1.5 }, { R_9, 1.5 }}, 50d, 0d,
+                NaNStrategy.MINIMAL);
+
+        //This is as per REMOVED as here CM changed its value from default
+        //while rest of Estimation types were anyways defaulted to REMOVED
+        testAssertMappedValues(specialValues, new Object[][] {
+                { CM, 2.0 }, { R_1, 2.0 }, { R_2, 2.0 }, { R_3, 1.0 },
+                { R_4, 1.5 }, { R_5, 2.0 }, { R_6, 2.0 },
+                { R_7, 2.0 }, { R_8, 2.0 }, { R_9, 2.0 }}, 50d, 0d,
+                NaNStrategy.REMOVED);
+    }
+
+    /**
+     * Simple test assertion utility method
+     *
+     * @param data input data
+     * @param map of expected result against a {@link Type}
+     * @param p the quantile to compute for
+     * @param tolerance the tolerance of difference allowed
+     * @param nanStrategy NaNStrategy to be passed
+     */
+    protected void testAssertMappedValues(double[] data, Object[][] map,
+            Double p, Double tolerance, NaNStrategy nanStrategy) {
+        for (Object[] o : map) {
+            Type e = (Type) o[0];
+            double expected = (Double) o[1];
+            try {
+                double result = new Percentile(p, e, nanStrategy).evaluate(data);
+                Assert.assertEquals("expected[" + e + "] = " + expected +
+                    " but was = " + result, expected, result, tolerance);
+            }catch(Exception ex) {
+                Assert.fail("Exception occured for estimation type "+e+":"+
+                        ex.getLocalizedMessage());
+            }
+        }
+    }
 }
