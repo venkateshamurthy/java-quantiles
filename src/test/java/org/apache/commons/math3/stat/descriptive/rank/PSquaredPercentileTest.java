@@ -30,6 +30,8 @@ import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.distribution.RealDistribution;
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.OutOfRangeException;
+import org.apache.commons.math3.random.JDKRandomGenerator;
+import org.apache.commons.math3.random.RandomGenerator;
 import org.apache.commons.math3.stat.descriptive.StorelessUnivariateStatistic;
 import org.apache.commons.math3.stat.descriptive.StorelessUnivariateStatisticAbstractTest;
 import org.apache.commons.math3.stat.descriptive.UnivariateStatistic;
@@ -541,8 +543,12 @@ StorelessUnivariateStatisticAbstractTest {
 
     private void assertValues(Double a, Double b, double delta) {
         if (Double.isNaN(a)) {
-            Assert.assertTrue("" + b + " is not NaN.", Double.isNaN(a));
-        } else {
+            Assert.assertTrue("while a is NAN," + b + " is not NaN/Inf.",
+                    Double.isNaN(b)||Double.isInfinite(b));
+        } else if(Double.isInfinite(a)){
+            Assert.assertTrue("while a is Inf," + b + " is not Inf/Nan.",
+                    Double.isInfinite(b)||Double.isNaN(b));
+        }else {
             double max = FastMath.max(a, b);
             double percentage = FastMath.abs(a - b) / max;
             double deviation = delta;
@@ -573,7 +579,6 @@ StorelessUnivariateStatisticAbstractTest {
         Double referenceValue = p2.evaluate(dall);
         assertValues(psquared.getResult(), referenceValue, delta);
     }
-
     private void doCalculatePercentile(double percentile, double[] test,
             double delta) {
         PSquaredPercentile psquared = new PSquaredPercentile(percentile);
@@ -593,7 +598,6 @@ StorelessUnivariateStatisticAbstractTest {
 
     @Test
     public void testCannedDataSet() {
-        // test.unoverride("dump");
         Integer[] seedInput =
                 new Integer[] { 283, 285, 298, 304, 310, 31, 319, 32, 33, 339,
                 342, 348, 350, 354, 354, 357, 36, 36, 369, 37, 37, 375,
@@ -746,7 +750,6 @@ StorelessUnivariateStatisticAbstractTest {
         data = distribution.sample(TINY);
         doCalculatePercentile(50, data, 0.05);
         doCalculatePercentile(95, data, 0.05);
-
     }
 
     /**
@@ -754,9 +757,11 @@ StorelessUnivariateStatisticAbstractTest {
      */
     @Test
     public void testDistribution() {
-        doDistributionTest(new NormalDistribution(4000, 50));
-        doDistributionTest(new LogNormalDistribution(4000, 50));
-        // doDistributionTest((new ExponentialDistribution(4000));
+        RandomGenerator random=new JDKRandomGenerator();
+        random.setSeed(Long.MAX_VALUE);
+        doDistributionTest(new NormalDistribution(random, 4000, 50));
+        doDistributionTest(new LogNormalDistribution(random, 4000, 50));
+        // doDistributionTest(new ExponentialDistribution(random, 4000));
         // doDistributionTest(new GammaDistribution(5d,1d),0.1);
     }
 }
