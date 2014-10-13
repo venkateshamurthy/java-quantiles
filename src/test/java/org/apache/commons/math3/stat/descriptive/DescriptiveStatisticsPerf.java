@@ -18,6 +18,7 @@
 package org.apache.commons.math3.stat.descriptive;
 
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
@@ -112,7 +113,7 @@ public class DescriptiveStatisticsPerf {
 	public void testAddLocked() {
 		DescriptiveStatisticalSummary<StorelessUnivariateStatistic> locked = new LockedDescriptiveStorelessStatistics();
 		StatisticalSummary[] summary = PerfTestUtils
-				.timesAndResultsConcurrently(
+				.runLongRunTests(
 						new PerfTestUtils.LongRunTest("AddLoc1",
 								new Adder<StorelessUnivariateStatistic>(locked),
 								repeatStats),
@@ -149,41 +150,89 @@ public class DescriptiveStatisticsPerf {
 						);
 
 	}
-
+	
 	@Test
-	public void testAddSyn() {
+	public void testAddSynchronizedWithStoredData() {
 		DescriptiveStatistics synchronous = new SynchronizedDescriptiveStatistics();
 		StatisticalSummary[] summary = PerfTestUtils
-				.timesAndResultsConcurrently(
-						new PerfTestUtils.LongRunTest("AddSyn1", 
+				.runLongRunTests(
+						new PerfTestUtils.LongRunTest("AddSynchronized1", 
 								new Adder<UnivariateStatistic>(synchronous),
 								repeatStats),
 								
-						new PerfTestUtils.LongRunTest("AddSyn2",
+						new PerfTestUtils.LongRunTest("AddSynchronized2",
 								new Adder<UnivariateStatistic>(synchronous),
 								repeatStats), 
 						
-						new PerfTestUtils.LongRunTest("MeanSyn",
+						new PerfTestUtils.LongRunTest("MeanSynchronized",
 								new Mean<UnivariateStatistic>(synchronous),
 								repeatStats), 
 						
-						new PerfTestUtils.LongRunTest("StdDevSyn",
+						new PerfTestUtils.LongRunTest("StdDevSynchronized",
 								new StdDeviation<UnivariateStatistic>(synchronous), 
 								repeatStats),
 										
-						new PerfTestUtils.LongRunTest("QuantileSyn",
+						new PerfTestUtils.LongRunTest("QuantileSynchronized",
 								new Quantile<UnivariateStatistic>(synchronous),
+								repeatStats));
+	}
+	
+	@Test
+	public void testAddSynchronous() {
+		SynchronizedDescriptiveStorelessStatistics synchronous = 
+				new SynchronizedDescriptiveStorelessStatistics();
+		StatisticalSummary[] summary = PerfTestUtils
+				.runLongRunTests(
+						new PerfTestUtils.LongRunTest("AddSyn1", 
+								new Adder<StorelessUnivariateStatistic>(synchronous),
+								repeatStats),
+								
+						new PerfTestUtils.LongRunTest("AddSyn2",
+								new Adder<StorelessUnivariateStatistic>(synchronous),
+								repeatStats), 
+								new PerfTestUtils.LongRunTest("AddSyn3", 
+										new Adder<StorelessUnivariateStatistic>(synchronous),
+										repeatStats),
+										
+								new PerfTestUtils.LongRunTest("AddSyn4",
+										new Adder<StorelessUnivariateStatistic>(synchronous),
+										repeatStats), 
+										new PerfTestUtils.LongRunTest("AddSyn5", 
+												new Adder<StorelessUnivariateStatistic>(synchronous),
+												repeatStats),
+												
+										new PerfTestUtils.LongRunTest("AddSyn6",
+												new Adder<StorelessUnivariateStatistic>(synchronous),
+												repeatStats), 
+												new PerfTestUtils.LongRunTest("AddSyn7", 
+														new Adder<StorelessUnivariateStatistic>(synchronous),
+														repeatStats),
+														
+												new PerfTestUtils.LongRunTest("AddSyn8",
+														new Adder<StorelessUnivariateStatistic>(synchronous),
+														repeatStats), 
+						new PerfTestUtils.LongRunTest("MeanSyn",
+								new Mean<StorelessUnivariateStatistic>(synchronous),
+								repeatStats), 
+						
+						new PerfTestUtils.LongRunTest("StdDevSyn",
+								new StdDeviation<StorelessUnivariateStatistic>(synchronous), 
+								repeatStats),
+										
+						new PerfTestUtils.LongRunTest("QuantileSyn",
+								new Quantile<StorelessUnivariateStatistic>(synchronous),
 								repeatStats));
 	}
 
 	@Test
 	public void testAddParallel() throws InterruptedException {
-		DescriptiveStatisticalSummary<StorelessUnivariateStatistic> lockFree = 
+		LockfreeDescriptiveStorelessStatistics lockFree = 
 				new LockfreeDescriptiveStorelessStatistics();
+//		lockFree.setIterations(repeatStats);
 		Publisher<StorelessUnivariateStatistic> pub = 
 				new Publisher<StorelessUnivariateStatistic>("pub", repeatStats, lockFree);
 		StatisticalSummary[] summary = PerfTestUtils
-				.timesAndResultsConcurrently(
+				.runLongRunTests(
 						new PerfTestUtils.LongRunTest("AddDis1",
 							new Adder<StorelessUnivariateStatistic>(lockFree),
 							repeatStats), 

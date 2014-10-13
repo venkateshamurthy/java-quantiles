@@ -30,10 +30,10 @@ import org.apache.commons.math3.exception.MathIllegalStateException;
  * Implementation of {@link org.apache.commons.math3.stat.descriptive.DescriptiveStatisticalSummary}
  * that is safe to use in a multithreaded environment. Multiple threads can
  * safely operate on a single instance without causing runtime exceptions due to
- * race conditions. In effect, this implementation makes modification and access
- * methods atomic operations for a single instance. That is to say, as one
- * thread is computing a statistic from the instance, no other thread can modify
- * the instance nor compute another statistic.
+ * race conditions. In effect, this implementation makes modifications as atomic 
+ * but access methods as concurrent operations for a single instance. 
+ * That is to say, as one thread is computing a statistic from the instance,
+ * no other thread can modify the instance however can compute another statistic.
  * 
  * @since 3.4
  */

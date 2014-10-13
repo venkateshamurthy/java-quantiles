@@ -14,7 +14,6 @@
 package org.apache.commons.math3.stat.descriptive;
 
 import java.util.Locale;
-import java.util.concurrent.locks.LockSupport;
 
 import org.apache.commons.math3.TestUtils;
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
@@ -47,20 +46,27 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
     }
 
     @Test
-    public void testSetterInjection() {
+    public void testSetterInjection() throws InterruptedException {
+    	
     	DescriptiveStatisticalSummary<StorelessUnivariateStatistic> stats = createDescriptiveStatistics();
+    	LockfreeDescriptiveStorelessStatistics lockFree =(LockfreeDescriptiveStorelessStatistics)stats;
         stats.addValue(1);
         stats.addValue(3);
-        LockSupport.parkNanos(10000L);
-        Assert.assertEquals(2, stats.getMean(), 1E-10);
+        stats.addValue(5);
+        //LockSupport.parkNanos(10000L);
+        Assert.assertEquals(3, stats.getN());
+        Assert.assertEquals(3, lockFree.storelessStats[0].getN());
+        Assert.assertEquals(3, lockFree.storelessStats[0].getResult(),0);
+        Assert.assertEquals(3, stats.getMean(), 1E-10);
         // Now lets try some new math
         stats=stats.withMean(new deepMean());
         Assert.assertEquals(42, stats.getMean(), 1E-10);
     }
 
     @Test
-    public void testCopy() {
+    public void testCopy() throws InterruptedException {
     	DescriptiveStatisticalSummary<StorelessUnivariateStatistic> stats = createDescriptiveStatistics();
+    	LockfreeDescriptiveStorelessStatistics lockFree =(LockfreeDescriptiveStorelessStatistics)stats;
         stats.addValue(1);
         stats.addValue(3);
         DescriptiveStatisticalSummary<StorelessUnivariateStatistic> copy =createDescriptiveStatistics(stats);
@@ -72,12 +78,12 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
     }
 
     @Test
-    public void testToString() {
+    public void testToString() throws InterruptedException {
         DescriptiveStatisticalSummary<StorelessUnivariateStatistic> stats = createDescriptiveStatistics();
+    	LockfreeDescriptiveStorelessStatistics lockFree =(LockfreeDescriptiveStorelessStatistics)stats;
         stats.addValue(1);
         stats.addValue(2);
         stats.addValue(3);
-        LockSupport.parkNanos(10000L);
         Locale d = Locale.getDefault();
         Locale.setDefault(Locale.US);
         Assert.assertEquals("LockfreeDescriptiveStorelessStatistics:\n" +
@@ -106,7 +112,7 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
 
     
     @Test
-    public void testSummaryConsistency() {
+    public void testSummaryConsistency() throws InterruptedException {
         final DescriptiveStatistics dstats = new DescriptiveStatistics();
         
         final double tol = 1E-12;
@@ -116,8 +122,8 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
             LockfreeDescriptiveStorelessStatistics descriptiveStorelessStats = new LockfreeDescriptiveStorelessStatistics();
             for(double d:values){
             	descriptiveStorelessStats.addValue(d);
-            	LockSupport.parkNanos(1000L);
             }
+            
             String msg="Failing at i="+i;
             TestUtils.assertEquals(msg,dstats.getMean(), descriptiveStorelessStats.getMean(), tol);
             TestUtils.assertEquals(msg,new Mean().evaluate(values), dstats.getMean(), tol);
@@ -138,12 +144,11 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
             TestUtils.assertEquals(msg,new Variance(false).evaluate(values), dstats.getPopulationVariance(), tol);
             descriptiveStorelessStats.clear();
             descriptiveStorelessStats.halt();
-            LockSupport.parkNanos(10000L);
         }
     }
 
     @Test
-	public void testWithFunctions() {
+	public void testWithFunctions() throws InterruptedException {
 		final double tol = 1E-12;
 		final double[] data = new double[] {
 				-0.012086732064244697,
@@ -158,16 +163,16 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
 				-0.24137994506058857, 0.47543170476574426,
 				-0.07495595384947631, 0.37445697625436497, -0.09944199541668033 };
 
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds = createDescriptiveStatistics();
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> dsMean = createDescriptiveStatistics()
+		final LockfreeDescriptiveStorelessStatistics ds = (LockfreeDescriptiveStorelessStatistics) createDescriptiveStatistics();
+		final LockfreeDescriptiveStorelessStatistics dsMean = (LockfreeDescriptiveStorelessStatistics)createDescriptiveStatistics()
 				.withMean(new Mean());
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> dsKurt = createDescriptiveStatistics()
+		final LockfreeDescriptiveStorelessStatistics dsKurt = (LockfreeDescriptiveStorelessStatistics)createDescriptiveStatistics()
 				.withKurtosis(new Kurtosis());
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> dsSkew = createDescriptiveStatistics()
+		final LockfreeDescriptiveStorelessStatistics dsSkew = (LockfreeDescriptiveStorelessStatistics)createDescriptiveStatistics()
 				.withSkewness(new Skewness());
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds50 = createDescriptiveStatistics()
+		final LockfreeDescriptiveStorelessStatistics ds50 = (LockfreeDescriptiveStorelessStatistics)createDescriptiveStatistics()
 				.withPercentile(new PSquarePercentile(50d));
-		final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> dsVar = createDescriptiveStatistics()
+		final LockfreeDescriptiveStorelessStatistics dsVar = (LockfreeDescriptiveStorelessStatistics)createDescriptiveStatistics()
 				.withVariance(new Variance());
 		for (double d : data) {
 			ds.addValue(d);
@@ -176,9 +181,7 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
 			dsKurt.addValue(d);
 			dsSkew.addValue(d);
 			dsVar.addValue(d);
-			LockSupport.parkNanos(10000L); // this is needed as otherwise Lockfree version doesnt work
 		}
-		LockSupport.parkNanos(10000L); // this is needed as otherwise Lockfree version doesnt work
 		TestUtils.assertEquals(ds.getMean(), dsMean.getMean(), tol);
 		TestUtils.assertEquals(ds.getMean(), dsKurt.getMean(), tol);
 		TestUtils.assertEquals(ds.getMean(), dsSkew.getMean(), tol);
@@ -192,7 +195,7 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
 	}
 
     @Test
-    public void testMath1129(){
+    public void testMath1129() throws InterruptedException{
         final double[] data = new double[] {
             -0.012086732064244697,
             -0.24975668704012527,
@@ -211,21 +214,20 @@ public class LockfreeDescriptiveStorelessStatisticsTest {
             -0.09944199541668033
         };
         
-        final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds = 
+        final LockfreeDescriptiveStorelessStatistics ds = 
         		new LockfreeDescriptiveStorelessStatistics();
-        final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds50 = 
+        final LockfreeDescriptiveStorelessStatistics ds50 = 
         		new LockfreeDescriptiveStorelessStatistics((data));
-        final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds75 = 
-        		ds.withPercentile(new PSquarePercentile(75d));
-        final DescriptiveStatisticalSummary<StorelessUnivariateStatistic> ds25 = 
-        		ds.withPercentile(new PSquarePercentile(25d));
+        final LockfreeDescriptiveStorelessStatistics ds75 = 
+        		(LockfreeDescriptiveStorelessStatistics) ds.withPercentile(new PSquarePercentile(75d));
+        final LockfreeDescriptiveStorelessStatistics ds25 = 
+        		(LockfreeDescriptiveStorelessStatistics) ds.withPercentile(new PSquarePercentile(25d));
+
         for(double d:data){
         	ds.addValue(d);
         	ds75.addValue(d);
         	ds25.addValue(d);
-        	LockSupport.parkNanos(10000);
         }
-        
         Assert.assertEquals(ds50.getPercentile(), ds.getPercentile(),1e-05);
         final double t = ds75.getPercentile();
         final double o = ds25.getPercentile();

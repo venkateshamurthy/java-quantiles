@@ -17,9 +17,12 @@
 package org.apache.commons.math3.stat.descriptive;
 
 import java.io.Serializable;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.math3.exception.MathIllegalArgumentException;
 import org.apache.commons.math3.exception.MathIllegalStateException;
@@ -52,28 +55,25 @@ import com.lmax.disruptor.util.DaemonThreadFactory;
  * {@link Disruptor LMAX Disruptor concurrency utility}.
  */
 public class LockfreeDescriptiveStorelessStatistics implements
-		DescriptiveStatisticalSummary<StorelessUnivariateStatistic>,
-		Serializable {
-
+        DescriptiveStatisticalSummary<StorelessUnivariateStatistic>,
+        Serializable {
 	/** Serialization UID */
 	private static final long serialVersionUID = 4133067267405273064L;
-
 	/** Default value for the {@code Disruptor ring buffer size}. */
-	private static final int DEFAULT_WINDOW = 1024*4;
-
+	private static final int DEFAULT_WINDOW = 1024 * 4;
 	/** {@code Disruptor} specifics */
 	private transient final Disruptor<DoubleValue> disruptor;
+	/** A sequce barrier */
 	/** a double event factory required to publish events to a disruptor */
-	private transient final EventFactory<DoubleValue> disruptorDataEventFactory = new DoubleValue.FACTORY();
-	/** an event translator adhering to {2link {@link EventTranslator}*/
+	private transient final EventFactory<DoubleValue> disruptorDataEventFactory 
+				= new DoubleValue.FACTORY();
+	/** an event translator adhering to {2link {@link EventTranslator} */
 	private transient final DoubleValueProducerWithTranslator disruptorDataSourcer;
-	/** thread pool*/
+	/** thread pool */
 	private transient final ExecutorService disruptorExecutor = Executors
-			.newCachedThreadPool(DaemonThreadFactory.INSTANCE);
-
+	        .newCachedThreadPool(DaemonThreadFactory.INSTANCE);
 	/** hold the current window size **/
 	private final int windowSize;
-
 	/** {@code StorelessUnivariateStatistic Statistic implementations} */
 	/** Mean */
 	private final StorelessUnivariateStatistic meanImpl;
@@ -85,7 +85,7 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	private final StorelessUnivariateStatistic maxImpl;
 	/** Min */
 	private final StorelessUnivariateStatistic minImpl;
-	/** Percentile */	
+	/** Percentile */
 	private final StorelessUnivariateStatistic percentileImpl;
 	/** Sum */
 	private final StorelessUnivariateStatistic sumImpl;
@@ -96,18 +96,22 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/** Variance */
 	private final StorelessUnivariateStatistic varianceImpl;
 	/** Array of Statistics */
-	private final StorelessUnivariateStatistic[] storelessStats;
-
+	/* private */final StorelessUnivariateStatistic[] storelessStats;
 	/**
 	 * An array of
 	 * {@code StorelessUnivariateStatistic Statistic implementations} for
 	 * convenience in looping
 	 */
-	private transient final StatisticEventHandler<? extends StorelessUnivariateStatistic>[] storelessStatEventHandlers;
-
+	/* private */transient final 
+		StatisticEventHandler<? extends StorelessUnivariateStatistic>[] 
+			storelessStatEventHandlers;
+	
+	CyclicBarrier barrier ;
+	
 	/**
-	 * Default constructor that builds a {@link LockfreeDescriptiveStorelessStatistics} instance with
-	 * a default size
+	 * Default constructor that builds a
+	 * {@link LockfreeDescriptiveStorelessStatistics} instance with a default
+	 * size
 	 */
 	public LockfreeDescriptiveStorelessStatistics() {
 		this(DEFAULT_WINDOW);
@@ -116,14 +120,13 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/**
 	 * Construct a {@link LockfreeDescriptiveStorelessStatistics} instance with
 	 * the specified window size
-	 * 
 	 * @param window size for the {@link RingBuffer ring}
 	 */
 	public LockfreeDescriptiveStorelessStatistics(int window)
-			throws MathIllegalArgumentException {
+	        throws MathIllegalArgumentException {
 		this(window, new Mean(), new GeometricMean(), new Kurtosis(),
-				new Max(), new Min(), new PSquarePercentile(50d),
-				new Skewness(), new Variance(), new SumOfSquares(), new Sum());
+		        new Max(), new Min(), new PSquarePercentile(50d),
+		        new Skewness(), new Variance(), new SumOfSquares(), new Sum());
 	}
 
 	/**
@@ -131,106 +134,100 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	 * an initial data values in double[] initialDoubleArray. If
 	 * initialDoubleArray is null, then this constructor corresponds to default
 	 * constructor
-	 * 
-	 * @param initialDoubleArray  the initial double[].
+	 * @param initialDoubleArray the initial double[].
 	 */
 	public LockfreeDescriptiveStorelessStatistics(double[] initialDoubleArray) {
 		this();
 		if (initialDoubleArray != null) {
-			for (double d : initialDoubleArray){
+			for (double d : initialDoubleArray) {
 				addValue(d);
 			}
 		}
 	}
 
 	/**
-	 * Default constructor with typical set of statistics that implement a {@link StorelessUnivariateStatistic}
-	 * 
+	 * Default constructor with typical set of statistics that implement a
+	 * {@link StorelessUnivariateStatistic}
 	 * @param window size of RingBuffer
-	 * @param mean is typically a {@link Mean} 
-	 * @param geometricMean is typically a {@link GeometricMean} 
-	 * @param kurtosis is typically a {@link Kurtosis} 
-	 * @param max is typically a {@link Max} 
-	 * @param min is typically a {@link Min} 
-	 * @param percentile is typically a {@link PSquarePercentile} 
-	 * @param skewness is typically a {@link Skewness} 
+	 * @param mean is typically a {@link Mean}
+	 * @param geometricMean is typically a {@link GeometricMean}
+	 * @param kurtosis is typically a {@link Kurtosis}
+	 * @param max is typically a {@link Max}
+	 * @param min is typically a {@link Min}
+	 * @param percentile is typically a {@link PSquarePercentile}
+	 * @param skewness is typically a {@link Skewness}
 	 * @param variance is typically a {@link Variance}
-	 * @param sumsq is  typically a {@link SumOfSquares}
+	 * @param sumsq is typically a {@link SumOfSquares}
 	 * @param sum is typically a {@link Sum}
 	 * @throws MathIllegalArgumentException in case if any of them are null
 	 */
 	private LockfreeDescriptiveStorelessStatistics(int window,
-			StorelessUnivariateStatistic mean,
-			StorelessUnivariateStatistic geometricMean,
-			StorelessUnivariateStatistic kurtosis,
-			StorelessUnivariateStatistic max,
-			StorelessUnivariateStatistic min,
-			StorelessUnivariateStatistic percentile,
-			StorelessUnivariateStatistic skewness,
-			StorelessUnivariateStatistic variance,
-			StorelessUnivariateStatistic sumsq,
-			StorelessUnivariateStatistic sum)
-			throws MathIllegalArgumentException {
-		
+	        StorelessUnivariateStatistic mean,
+	        StorelessUnivariateStatistic geometricMean,
+	        StorelessUnivariateStatistic kurtosis,
+	        StorelessUnivariateStatistic max, StorelessUnivariateStatistic min,
+	        StorelessUnivariateStatistic percentile,
+	        StorelessUnivariateStatistic skewness,
+	        StorelessUnivariateStatistic variance,
+	        StorelessUnivariateStatistic sumsq, StorelessUnivariateStatistic sum)
+	        throws MathIllegalArgumentException {
 		storelessStats = new StorelessUnivariateStatistic[] {
-				this.meanImpl = mean,
-				this.geometricMeanImpl = geometricMean,
-				this.kurtosisImpl = kurtosis, 
-				this.maxImpl = max,
-				this.minImpl = min, 
-				this.percentileImpl = percentile,
-				this.skewnessImpl = skewness,
-				this.varianceImpl = variance, 
-				this.sumsqImpl = sumsq,
-				this.sumImpl = sum };
-		checkNotNull((Object[])storelessStats);
-		MathArrays.checkPositive(new double[]{window});
+		        this.meanImpl = mean, this.geometricMeanImpl = geometricMean,
+		        this.kurtosisImpl = kurtosis, this.maxImpl = max,
+		        this.minImpl = min, this.percentileImpl = percentile,
+		        this.skewnessImpl = skewness, this.varianceImpl = variance,
+		        this.sumsqImpl = sumsq, this.sumImpl = sum };
+		checkNotNull((Object[]) storelessStats);
+		MathArrays.checkPositive(new double[] { window });
 		this.windowSize = window;
-		
-		storelessStatEventHandlers = StatisticEventHandler.create(storelessStats);
-		
-		disruptor = new Disruptor<DoubleValue>(disruptorDataEventFactory,windowSize, disruptorExecutor);
+		barrier=new CyclicBarrier(storelessStats.length+1);
+		storelessStatEventHandlers = StatisticEventHandler.create(storelessStats,barrier);
+		disruptor = new Disruptor<DoubleValue>(disruptorDataEventFactory,
+		        windowSize, disruptorExecutor);
 		disruptor.handleEventsWith(storelessStatEventHandlers);
-		
 		final RingBuffer<DoubleValue> ring = disruptor.start();
 		disruptorDataSourcer = new DoubleValueProducerWithTranslator(ring);
 	}
 
 	/******** With Functions ***************************/
-	/**{@inheritDoc}*/
-	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> withPercentile(
-			StorelessUnivariateStatistic percentileImpl) {
+	/** {@inheritDoc} */
+	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> 
+		withPercentile(StorelessUnivariateStatistic percentileImpl) {
 		return new LockfreeDescriptiveStorelessStatistics(windowSize, meanImpl,
-				geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
-				percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
+		        geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
+		        percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
 	}
-	/**{@inheritDoc}*/
-	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> withMean(
-			StorelessUnivariateStatistic meanImpl) {
+
+	/** {@inheritDoc} */
+	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> 
+		withMean(StorelessUnivariateStatistic meanImpl) {
 		return new LockfreeDescriptiveStorelessStatistics(windowSize, meanImpl,
-				geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
-				percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
+		        geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
+		        percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
 	}
-	/**{@inheritDoc}*/
-	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> withKurtosis(
-			StorelessUnivariateStatistic kurtosisImpl) {
+
+	/** {@inheritDoc} */
+	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> 
+		withKurtosis(StorelessUnivariateStatistic kurtosisImpl) {
 		return new LockfreeDescriptiveStorelessStatistics(windowSize, meanImpl,
-				geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
-				percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
+		        geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
+		        percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
 	}
-	/**{@inheritDoc}*/
-	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> withVariance(
-			StorelessUnivariateStatistic varianceImpl) {
+
+	/** {@inheritDoc} */
+	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> 
+		withVariance(StorelessUnivariateStatistic varianceImpl) {
 		return new LockfreeDescriptiveStorelessStatistics(windowSize, meanImpl,
-				geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
-				percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
+		        geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
+		        percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
 	}
-	/**{@inheritDoc}*/
-	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> withSkewness(
-			StorelessUnivariateStatistic skewnessImpl) {
+
+	/** {@inheritDoc} */
+	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> 
+		withSkewness(StorelessUnivariateStatistic skewnessImpl) {
 		return new LockfreeDescriptiveStorelessStatistics(windowSize, meanImpl,
-				geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
-				percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
+		        geometricMeanImpl, kurtosisImpl, maxImpl, minImpl,
+		        percentileImpl, skewnessImpl, varianceImpl, sumsqImpl, sumImpl);
 	}
 
 	/**
@@ -238,18 +235,31 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	 * (i.e., the number of stored elements equals the currently configured
 	 * windowSize), the first (oldest) element in the dataset is discarded to
 	 * make room for the new value.
-	 * 
 	 * @param value to be added
 	 */
 	public void addValue(double value) {
+		try {
+		barrier.reset();
+		}
+		finally{}
 		disruptorDataSourcer.onData(value);
-
+		try {
+	        barrier.await(10,TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+	        // TODO Auto-generated catch block
+	        e.printStackTrace();
+        } catch (BrokenBarrierException e) {
+	        // TODO Auto-generated catch block
+	        e.printStackTrace();
+        } catch (TimeoutException e) {
+	        // TODO Auto-generated catch block
+	        e.printStackTrace();
+        }
 	}
 
 	/**
 	 * Returns the <a href="http://www.xycoon.com/arithmetic_mean.htm">
 	 * arithmetic mean </a> of the available values
-	 * 
 	 * @return The mean or Double.NaN if no values have been added.
 	 */
 	public double getMean() {
@@ -259,7 +269,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/**
 	 * Returns the <a href="http://www.xycoon.com/geometric_mean.htm"> geometric
 	 * mean </a> of the available values
-	 * 
 	 * @return The geometricMean, Double.NaN if no values have been added, or if
 	 *         the product of the available values is less than or equal to 0.
 	 */
@@ -269,8 +278,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the (sample) variance of the available values.
-	 * 
-	 * 
 	 * @return The variance, Double.NaN if no values have been added or 0.0 for
 	 *         a single value set.
 	 */
@@ -280,7 +287,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the standard deviation of the available values.
-	 * 
 	 * @return The standard deviation, Double.NaN if no values have been added
 	 *         or 0.0 for a single value set.
 	 */
@@ -299,7 +305,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/**
 	 * Returns the skewness of the available values. Skewness is a measure of
 	 * the asymmetry of a given distribution.
-	 * 
 	 * @return The skewness, Double.NaN if no values have been added or 0.0 for
 	 *         a value set &lt;=2.
 	 */
@@ -310,7 +315,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/**
 	 * Returns the Kurtosis of the available values. Kurtosis is a measure of
 	 * the "peakedness" of a distribution
-	 * 
 	 * @return The kurtosis, Double.NaN if no values have been added, or 0.0 for
 	 *         a value set &lt;=3.
 	 */
@@ -320,7 +324,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the maximum of the available values
-	 * 
 	 * @return The max or Double.NaN if no values have been added.
 	 */
 	public double getMax() {
@@ -329,7 +332,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the minimum of the available values
-	 * 
 	 * @return The min or Double.NaN if no values have been added.
 	 */
 	public double getMin() {
@@ -338,16 +340,14 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the number of available values
-	 * 
 	 * @return The number of available values
 	 */
 	public long getN() {
-		return disruptor.getRingBuffer().getCursor()+1;
+		return disruptor.getRingBuffer().getCursor() + 1;
 	}
 
 	/**
 	 * Returns the sum of the values that have been added to Univariate.
-	 * 
 	 * @return The sum or Double.NaN if no values have been added
 	 */
 	public double getSum() {
@@ -356,7 +356,6 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the sum of the squares of the available values.
-	 * 
 	 * @return The sum of the squares or Double.NaN if no values have been
 	 *         added.
 	 */
@@ -368,14 +367,15 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	 * Resets all statistics and storage
 	 */
 	public void clear() {
-		disruptor.halt();
+		barrier.reset();
+		//disruptor.halt();
 		disruptor.getRingBuffer().resetTo(RingBuffer.INITIAL_CURSOR_VALUE);
-		for (StorelessUnivariateStatistic s : storelessStats){
+		for (StorelessUnivariateStatistic s : storelessStats) {
 			s.clear();
 		}
 	}
-	
-	public void halt(){
+
+	public void halt() {
 		disruptor.shutdown();
 		disruptorExecutor.shutdownNow();
 		try {
@@ -387,22 +387,21 @@ public class LockfreeDescriptiveStorelessStatistics implements
 
 	/**
 	 * Returns the window of buffer used to intermediately store.
-	 * 
 	 * @return The current window size.
 	 */
 	public int getWindowSize() {
 		return windowSize;
 	}
+
 	/** {@inheritDoc} */
 	public double getPercentile() throws MathIllegalStateException,
-			MathIllegalArgumentException {
+	        MathIllegalArgumentException {
 		return percentileImpl.getResult();
 	}
 
 	/**
 	 * Generates a text report displaying univariate statistics from values that
 	 * have been added. Each statistic is displayed on a separate line.
-	 * 
 	 * @return String with line feeds displaying statistics
 	 */
 	@Override
@@ -415,7 +414,7 @@ public class LockfreeDescriptiveStorelessStatistics implements
 		outBuffer.append("max: ").append(getMax()).append(endl);
 		outBuffer.append("mean: ").append(getMean()).append(endl);
 		outBuffer.append("std dev: ").append(getStandardDeviation())
-				.append(endl);
+		        .append(endl);
 		try {
 			// No catch for MIAE because actual parameter is valid below
 			outBuffer.append("median: ").append(getPercentile()).append(endl);
@@ -430,41 +429,32 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	/**
 	 * Returns a copy of this DescriptiveStatistics instance with the same
 	 * internal state.
-	 * 
 	 * @return a copy of this
 	 */
 	public DescriptiveStatisticalSummary<StorelessUnivariateStatistic> copy() {
 		DescriptiveStatisticalSummary<StorelessUnivariateStatistic> result = 
-				new LockfreeDescriptiveStorelessStatistics(
-				 windowSize,
-				 meanImpl,
-				 geometricMeanImpl,
-				 kurtosisImpl,
-				 maxImpl,
-				 minImpl,
-				 percentileImpl,
-				 skewnessImpl,
-				 varianceImpl,
-				 sumsqImpl,
-				 sumImpl);
+					new LockfreeDescriptiveStorelessStatistics(
+		        windowSize, meanImpl, geometricMeanImpl, kurtosisImpl, maxImpl,
+		        minImpl, percentileImpl, skewnessImpl, varianceImpl, sumsqImpl,
+		        sumImpl);
 		return result;
 	}
-	
-	/** Utility methods  */
+
+	/** Utility methods */
 	/**
 	 * check not null for object array
 	 * @param objects in an array to be checked
 	 * @throws NullArgumentException in case of nulls
 	 */
-	private static void checkNotNull(Object... objects) throws NullArgumentException{
+	private static void checkNotNull(Object... objects)
+	        throws NullArgumentException {
 		MathUtils.checkNotNull(objects);
-		for(Object o:objects){
+		for (Object o : objects) {
 			MathUtils.checkNotNull(o);
 		}
 	}
 
 	/**** Disruptor specific ***/
-
 	/**
 	 * A simple data value producer that produces a double wrapped in a
 	 * {@link DoubleValue} to be added to the {@link Disruptor}'s
@@ -473,17 +463,15 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	 * Note: This is not a daemon/thread and is used to just wrap the given data
 	 */
 	private static class DoubleValueProducerWithTranslator {
-
 		/** A {@link Disruptor}'s {@link RingBuffer ring buffer} */
 		private final RingBuffer<DoubleValue> ringBuffer;
 
 		/**
-		 * Constructor with a given ring buffer 
-		 * 
+		 * Constructor with a given ring buffer
 		 * @param ringBuffer from disruptor
 		 */
 		public DoubleValueProducerWithTranslator(
-				RingBuffer<DoubleValue> ringBuffer) {
+		        RingBuffer<DoubleValue> ringBuffer) {
 			this.ringBuffer = ringBuffer;
 		}
 
@@ -491,16 +479,18 @@ public class LockfreeDescriptiveStorelessStatistics implements
 		 * A typical standard {@link EventTranslatorOneArg one argument
 		 * TRANSLATOR} required to set a data to an {@link DoubleValue event}
 		 */
-		private static final EventTranslatorOneArg<DoubleValue, Double> TRANSLATOR = new EventTranslatorOneArg<DoubleValue, Double>() {
+		private final EventTranslatorOneArg<DoubleValue, Double> TRANSLATOR 
+		= new EventTranslatorOneArg<DoubleValue, Double>() {
 			public void translateTo(DoubleValue event, long sequence,
-					Double data) {
+			        Double data) {
 				event.setValue(data);
+				// ringBuffer.addGatingSequences(new Sequence[]{new
+				// Sequence(sequence)});
 			}
 		};
 
 		/**
 		 * Publishes data to a ring buffer.
-		 * 
 		 * @param data a value
 		 */
 		public void onData(Double data) {
@@ -514,6 +504,7 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	private static class DoubleValue {
 		/** value */
 		double value;
+
 		/**
 		 * value is returned
 		 * @return value
@@ -521,7 +512,8 @@ public class LockfreeDescriptiveStorelessStatistics implements
 		public double getValue() {
 			return value;
 		}
-		/** 
+
+		/**
 		 * set the value
 		 * @param val to be set
 		 * @return this instance
@@ -530,7 +522,8 @@ public class LockfreeDescriptiveStorelessStatistics implements
 			this.value = val;
 			return this;
 		}
-		/** 
+
+		/**
 		 * a class for factory to generating events
 		 */
 		public static class FACTORY implements EventFactory<DoubleValue> {
@@ -547,39 +540,43 @@ public class LockfreeDescriptiveStorelessStatistics implements
 	 * A general consumer of events that incrementally adds a data received from
 	 * {@link Disruptor}'s {@link RingBuffer ring buffer} to a
 	 * {@link StorelessUnivariateStatistic}
-	 * 
 	 * @param <S> an implement of {@link StorelessUnivariateStatistic}
 	 */
 	private static class StatisticEventHandler<S extends StorelessUnivariateStatistic>
-			implements EventHandler<DoubleValue> {
-
+	        implements EventHandler<DoubleValue> {
+		
 		/**
 		 * A {@link StorelessUnivariateStatistic} instance to be computed for
 		 * data set published on a {@link RingBuffer ring buffer}
 		 */
 		private final S stats;
-
-		/**
-		 * Constructor
-		 * 
-		 * @param stats to be used for incrementally building
-		 */
-		public StatisticEventHandler(S stats) {
-			this.stats = stats;
-		}
+		private CyclicBarrier barrier;
 		
 		/**
-		 *  a creation method for array of handlers.
-		 *  @param storelessStats an array of stats
-		 *  @return StatisticEventHandler[]
-		 *  <T> a type of {@code StorelessUnivariateStatistic}
+		 * Constructor
+		 * @param stats to be used for incrementally building
 		 */
-		public  static <T extends StorelessUnivariateStatistic> StatisticEventHandler<T>[] create(
-				T[] storelessStats) {
+		public StatisticEventHandler(S stats,CyclicBarrier cyclicBarrier) {
+			this.stats = stats;
+			this.barrier=cyclicBarrier;
+		}
+
+
+		/**
+		 * a creation method for array of handlers.
+		 * @param storelessStats an array of stats
+		 * @return StatisticEventHandler[] <T> a type of
+		 *         {@code StorelessUnivariateStatistic}
+		 */
+		public static <T extends StorelessUnivariateStatistic> 
+			StatisticEventHandler<T>[] create(T[] storelessStats,
+					CyclicBarrier cyclicBarrier) {
 			@SuppressWarnings("unchecked")
-			StatisticEventHandler<T>[] storelessStatEventHandlers= new StatisticEventHandler[storelessStats.length];
-			for (int i = 0; i < storelessStats.length; i++){
-				storelessStatEventHandlers[i] = new StatisticEventHandler<T>(storelessStats[i]);
+			StatisticEventHandler<T>[] storelessStatEventHandlers = 
+				new StatisticEventHandler[storelessStats.length];
+			for (int i = 0; i < storelessStats.length; i++) {
+				storelessStatEventHandlers[i] = new StatisticEventHandler<T>(
+				        storelessStats[i],cyclicBarrier);
 			}
 			return storelessStatEventHandlers;
 		}
@@ -588,10 +585,13 @@ public class LockfreeDescriptiveStorelessStatistics implements
 		 * {@inheritDoc}. This event contains a double value to be added to
 		 * stats
 		 */
-		public  void onEvent(DoubleValue event, long sequence, boolean endOfBatch)
-				throws Exception {
-			final double value=event.getValue();
+		public void onEvent(DoubleValue event, long sequence, boolean endOfBatch)
+		        throws Exception {
+			final double value = event.getValue();
 			stats.increment(value);
+			barrier.await(10,TimeUnit.SECONDS);
 		}
 	}
+
+
 }
